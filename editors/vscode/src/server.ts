@@ -306,6 +306,7 @@ const textDirectiveCompletions: CompletionItem[] = [
 
 const leafDirectiveCompletions: CompletionItem[] = [
   { label: "::label", detail: "Declare a label", kind: CompletionItemKind.Snippet, insertText: "label[${1:id}]", insertTextFormat: InsertTextFormat.Snippet },
+  { label: "::caption", detail: "Caption the preceding table", kind: CompletionItemKind.Snippet, insertText: "caption[${1:Caption}]", insertTextFormat: InsertTextFormat.Snippet },
   { label: "::bibliography", detail: "Place the bibliography", kind: CompletionItemKind.Snippet, insertText: "bibliography[]", insertTextFormat: InsertTextFormat.Snippet },
 ];
 

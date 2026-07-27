@@ -54,11 +54,16 @@ text when needed:
 | Sample | Value |
 | ------ | ----: |
 | A      |    42 |
+::caption[Measurements collected during the trial.]
 ::label[table:measurements]
 
 The measurements appear in
 :ref[table:measurements]{text="the measurements table"}.
 ```
+
+Place `::caption[...]` immediately after a GFM table. When the table also needs
+a reference target, place its `::label[...]` after the caption as shown above.
+The caption renders as the table's native HTML `<caption>`.
 
 ### Citations
 

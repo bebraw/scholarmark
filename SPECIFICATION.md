@@ -48,6 +48,8 @@ second Markdown dialect.
   title through lower-level sections.
 - Level-one headings are supported as ordinary Markdown document titles.
 - GFM tables, strikethrough, task lists, autolinks, and footnotes.
+- A postfix `::caption[text]` on a GFM table renders as its sanitized HTML
+  caption. An optional table label follows the caption.
 - YAML and TOML frontmatter is parsed but not rendered in the preview.
 - Standalone `::: comment` … `:::` blocks remain canonical source but do not
   render or contribute headings, citations, references, or validation inside

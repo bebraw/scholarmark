@@ -124,6 +124,7 @@ const safeElements = [
   "blockquote",
   "br",
   "button",
+  "caption",
   "code",
   "del",
   "em",
@@ -176,6 +177,7 @@ const previewSchema: Schema = {
       "title",
     ],
     button: ["ariaLabel", "className", "dataCitation", "dataLocator", ["type", "button"]],
+    caption: ["className"],
     code: ["className"],
     figure: ["className", "id"],
     figcaption: ["className"],
@@ -347,6 +349,7 @@ function markdownProcessor(
       diagnostics: prepared.diagnostics,
     })
     .use(remarkRehype)
+    .use(attachTableCaptions)
     .use(annotatePreviewSourcePositions)
     .use(renderNumberedHeadings, { headingNumbers: options.headingNumbers, headings })
     .use(normalizeTableAlignment)
@@ -540,12 +543,25 @@ function renderSemanticDirectives(options: SemanticOptions) {
         }
         return [SKIP];
       }
+      if (directiveName === "caption" && directive.type === "leafDirective" && isTableCaption(index, parent)) {
+        directive.children = [];
+        directive.data = {
+          ...directive.data,
+          hName: "caption",
+          hProperties: { className: ["semantic-table-caption"] },
+          hChildren: [{ type: "text", value: content }],
+        };
+        return;
+      }
       if ((directiveName === "box" || directiveName === "caption") && directive.type === "leafDirective") {
         const from = directive.position?.start.offset ?? 0;
         const to = directive.position?.end.offset ?? from;
         options.diagnostics.push({
           severity: "error",
-          message: `::${directiveName} must be inside a :::figure container`,
+          message:
+            directiveName === "caption"
+              ? "::caption must follow a table or be inside a :::figure container"
+              : "::box must be inside a :::figure container",
           from,
           to,
         });
@@ -644,7 +660,7 @@ function renderSemanticDirectives(options: SemanticOptions) {
 function validateNativeFigureSyntax(source: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const tree = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter, ["yaml", "toml"]).use(remarkDirective).parse(source);
-  visit(tree, (node) => {
+  visit(tree, (node, index, parent) => {
     if (node.type !== "leafDirective" && node.type !== "containerDirective") return;
     const directive: Directives = node;
     const name = directive.name.toLocaleLowerCase();
@@ -655,13 +671,52 @@ function validateNativeFigureSyntax(source: string): Diagnostic[] {
       );
       return [SKIP];
     }
+    if (directive.type === "leafDirective" && name === "caption" && index !== undefined && parent && isTableCaption(index, parent)) return;
     if (directive.type === "leafDirective" && (name === "box" || name === "caption")) {
       const from = directive.position?.start.offset ?? 0;
       const to = directive.position?.end.offset ?? from;
-      diagnostics.push({ severity: "error", message: `::${name} must be inside a :::figure container`, from, to });
+      diagnostics.push({
+        severity: "error",
+        message:
+          name === "caption"
+            ? "::caption must follow a table or be inside a :::figure container"
+            : "::box must be inside a :::figure container",
+        from,
+        to,
+      });
     }
   });
   return diagnostics;
+}
+
+function isTableCaption(index: number, parent: Parent): boolean {
+  return parent.children[index - 1]?.type === "table";
+}
+
+function attachTableCaptions() {
+  return (tree: HastRoot): void => moveTableCaptions(tree);
+}
+
+function moveTableCaptions(parent: HastRoot | HastElement): void {
+  for (let index = 0; index < parent.children.length; index += 1) {
+    const node = parent.children[index];
+    if (node?.type === "element" && node.tagName === "caption") {
+      let tableIndex = index - 1;
+      while (tableIndex >= 0) {
+        const candidate = parent.children[tableIndex];
+        if (candidate?.type !== "text" || candidate.value.trim()) break;
+        tableIndex -= 1;
+      }
+      const table = parent.children[tableIndex];
+      if (table?.type === "element" && table.tagName === "table") {
+        table.children.unshift(node);
+        parent.children.splice(index, 1);
+        index -= 1;
+        continue;
+      }
+    }
+    if (node?.type === "element") moveTableCaptions(node);
+  }
 }
 
 interface NumberedHeadingOptions {
@@ -853,13 +908,18 @@ function labelAttachments(tree: MdastRoot): ReadonlyMap<number, MdastRootContent
     if (!isLabelDirective(node)) continue;
     const from = node.position?.start.offset;
     const previous = tree.children[index - 1];
-    if (from !== undefined && previous && isLabelTarget(previous)) attachments.set(from, previous);
+    const target = previous && isCaptionDirective(previous) && isTableCaption(index - 1, tree) ? tree.children[index - 2] : previous;
+    if (from !== undefined && target && isLabelTarget(target)) attachments.set(from, target);
   }
   return attachments;
 }
 
 function isLabelDirective(node: MdastRootContent): boolean {
   return node.type === "leafDirective" && node.name.toLocaleLowerCase() === "label";
+}
+
+function isCaptionDirective(node: MdastRootContent): boolean {
+  return node.type === "leafDirective" && node.name.toLocaleLowerCase() === "caption";
 }
 
 function isLabelTarget(node: MdastRootContent): boolean {

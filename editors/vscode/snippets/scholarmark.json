@@ -24,6 +24,11 @@
     "body": ["::bibliography[]"],
     "description": "Place the cited bibliography"
   },
+  "Scholarmark table caption": {
+    "prefix": "sm-caption",
+    "body": ["::caption[${1:Caption}]", "${0}"],
+    "description": "Caption the preceding Markdown table"
+  },
   "Scholarmark boxplot": {
     "prefix": "sm-boxplot",
     "body": [

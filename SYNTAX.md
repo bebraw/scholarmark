@@ -43,10 +43,16 @@ target. Use `text` to override link text, particularly for non-heading targets:
 | Method | Result |
 | --- | --- |
 | A | 42 |
+::caption[Results by experimental method.]
 ::label[table:methods]
 
 The results appear in :ref[table:methods]{text="the methods table"}.
 ```
+
+A table caption uses the same `::caption[...]` spelling as a native figure
+caption, but follows the complete GFM table. If present, the table's label
+follows its caption. A caption anywhere else must be inside a supported figure
+container.
 
 Labels may use familiar LaTeX-style keys containing letters, numbers, colons,
 underscores, and hyphens. Duplicate, invalid, and unattached labels fail

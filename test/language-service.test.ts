@@ -90,6 +90,23 @@ See :ref[real].`;
     );
   });
 
+  it("accepts a caption and label after a GFM table", () => {
+    const source = `| Method | Result |
+| --- | ---: |
+| A | 42 |
+::caption[Results by method.]
+::label[table:results]
+
+See :ref[table:results]{text="the results table"}.`;
+    const analysis = analyzeScholarmark(source);
+
+    expect(analysis.diagnostics).toEqual([]);
+    expect(analysis.labels.map((label) => label.id)).toEqual(["table:results"]);
+    expect(analysis.occurrences.map(({ kind, id }) => ({ kind, id }))).toEqual([
+      { kind: "reference", id: "table:results" },
+    ]);
+  });
+
   it("activates diagnostics only for documents using recognized syntax", () => {
     expect(isScholarmarkDocument("Ordinary Markdown with a value=assignment.")).toBe(false);
     expect(isScholarmarkDocument("```markdown\n:cite[example]\n```")).toBe(false);

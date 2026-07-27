@@ -807,22 +807,36 @@ Paragraph
     expect(withoutSourcePositions(rendered.html)).toContain("<h1>Document title</h1>");
   });
 
-  it("renders a label on a non-heading block and rejects loose captions", () => {
+  it("renders a caption and label on a table", () => {
     const source = `## Section
 | Value |
 | ---: |
 | 42 |
+::caption[Measured values & observations]
 ::label[table:value]
 
-:ref[table:value]{text="Custom label"}
-::caption[Loose caption]`;
+:ref[table:value]{text="Custom label"}`;
     const rendered = render(source, "");
     const html = withoutSourcePositions(rendered.html);
 
-    expect(rendered.diagnostics.map(({ message }) => message)).toEqual(["::caption must be inside a :::figure container"]);
+    expect(rendered.diagnostics).toEqual([]);
+    expect(diagnose(source)).toEqual([]);
+    expect(html).toContain('<table><caption class="semantic-table-caption">Measured values &#x26; observations</caption>');
     expect(html).toContain('<span class="semantic-label" id="table:value"></span>');
     expect(html).toContain('<a class="semantic-reference" data-reference="table:value" href="#table:value">Custom label</a>');
-    expect(html).toContain('<code class="native-figure-error">::caption[Loose caption]</code>');
+  });
+
+  it("rejects captions that do not follow tables", () => {
+    const source = "A paragraph.\n::caption[Loose caption]";
+    const rendered = render(source, "");
+
+    expect(rendered.diagnostics.map(({ message }) => message)).toEqual([
+      "::caption must follow a table or be inside a :::figure container",
+    ]);
+    expect(diagnose(source).map(({ message }) => message)).toEqual([
+      "::caption must follow a table or be inside a :::figure container",
+    ]);
+    expect(withoutSourcePositions(rendered.html)).toContain('<code class="native-figure-error">::caption[Loose caption]</code>');
   });
 
   it("normalizes uppercase semantic names and preserves unknown directive content", () => {
