@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  diagnose,
   headingNumbersByOffset,
   parseBibliography,
   render as renderAsync,
@@ -82,6 +83,44 @@ describe("render", () => {
 
     const synchronous = render(source, bibliography, "apa", { citationFormatter });
     expect(synchronous.diagnostics.at(-1)?.message).toMatch(/async/iu);
+  });
+
+  it("resolves host-provided references with host-first precedence on both render paths", async () => {
+    const source = `::label[ch:technology]
+
+## Local technology
+
+See :ref[ch:technology] and :ref[sec:citing]{text="the LaTeX section"}.`;
+    const referenceTargets = new Map([
+      ["ch:technology", { title: "11. Technology", href: "/book/technology/" }],
+      ["sec:citing", { title: "A.5 Cite in LaTeX", href: "/book/latex/#cite-in-latex" }],
+    ]);
+    const asynchronous = await renderAsync(source, "", "apa", { referenceTargets });
+    const synchronous = render(source, "", "apa", { referenceTargets });
+    const html = withoutSourcePositions(asynchronous.html);
+
+    expect(asynchronous).toEqual(synchronous);
+    expect(asynchronous.diagnostics).toEqual([]);
+    expect(html).toContain(
+      '<a class="semantic-reference" data-reference="ch:technology" href="/book/technology/">11. Technology</a>',
+    );
+    expect(html).toContain(
+      '<a class="semantic-reference" data-reference="sec:citing" href="/book/latex/#cite-in-latex">the LaTeX section</a>',
+    );
+    expect(diagnose(":ref[sec:citing]", "", { referenceTargets })).toEqual([]);
+  });
+
+  it("keeps unresolved references invalid and sanitizes unsafe host destinations", () => {
+    const source = ":ref[missing] :ref[unsafe]";
+    const rendered = render(source, "", "apa", {
+      referenceTargets: new Map([["unsafe", { title: "Unsafe", href: "javascript:alert(1)" }]]),
+    });
+
+    expect(rendered.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: "error", message: "Missing label: missing" }),
+    );
+    expect(withoutSourcePositions(rendered.html)).toContain('<a class="semantic-reference" data-reference="unsafe">Unsafe</a>');
+    expect(rendered.html).not.toContain("javascript:");
   });
 
   it("renders an accessible deterministic native boxplot", () => {
@@ -214,7 +253,7 @@ const answer = 42;
     expect(html).toContain("<li>two</li>");
     expect(html).toContain("const answer = 42;");
     expect(html).toContain('<span class="semantic-label" id="table:one"></span>');
-    expect(html).toContain('<a class="semantic-reference" href="#sec-legacy">Evidence</a>');
+    expect(html).toContain('<a class="semantic-reference" data-reference="sec-legacy" href="#sec-legacy">Evidence</a>');
     expect(html).toContain('<code class="language-ts">const answer = 42;');
   });
 
@@ -475,7 +514,7 @@ content
     const html = withoutSourcePositions(rendered.html);
     expect(html).toContain('<span class="semantic-label" id="study"></span>');
     expect(html).toContain("<h1>Study</h1>");
-    expect(html).toContain('<a class="semantic-reference" href="#study">Study</a>');
+    expect(html).toContain('<a class="semantic-reference" data-reference="study" href="#study">Study</a>');
   });
 
   it("renders authored HTML as text and removes unsafe link targets", () => {
@@ -613,8 +652,8 @@ Footnote.[^a]
     expect(html).toContain('<span class="semantic-label" id="sec:legacy"></span>');
     expect(html).toContain('<h2 id="repeated"><span class="section-number">1 </span>Repeated</h2>');
     expect(html).toContain('<h2 id="repeated-2"><span class="section-number">2 </span>Repeated</h2>');
-    expect(html).toContain('<a class="semantic-reference" href="#sec:legacy">1 Repeated</a>');
-    expect(html).toContain('<a class="semantic-reference" href="#table:one">custom table</a>');
+    expect(html).toContain('<a class="semantic-reference" data-reference="sec:legacy" href="#sec:legacy">1 Repeated</a>');
+    expect(html).toContain('<a class="semantic-reference" data-reference="table:one" href="#table:one">custom table</a>');
     expect(html).toContain("See <button");
     expect(html).toContain(">Merton (1942)</button>, <button");
     expect(html).toContain(">Doe (2026)</button>, p. 4 for context");
@@ -719,7 +758,7 @@ Paragraph`;
 
     expect(rendered.diagnostics.map(({ message }) => message)).toEqual(["::caption must be inside a :::figure container"]);
     expect(html).toContain('<span class="semantic-label" id="table:value"></span>');
-    expect(html).toContain('<a class="semantic-reference" href="#table:value">Custom label</a>');
+    expect(html).toContain('<a class="semantic-reference" data-reference="table:value" href="#table:value">Custom label</a>');
     expect(html).toContain('<code class="native-figure-error">::caption[Loose caption]</code>');
   });
 

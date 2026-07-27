@@ -36,7 +36,7 @@ type BibliographyEntry = PublicationCitationEntry;
 
 interface ReferenceEntry {
   title: string;
-  slug: string;
+  href: string;
 }
 
 interface Citation {
@@ -70,10 +70,23 @@ export interface RenderedHeading {
 
 export type HeadingNumbers = Readonly<Record<number, string>>;
 
+export interface ReferenceTarget {
+  /** Default visible text when a reference does not provide custom text. */
+  readonly title: string;
+  /** Complete destination, including an optional path and fragment. */
+  readonly href: string;
+}
+
+export interface DiagnoseOptions {
+  readonly referenceTargets?: ReadonlyMap<string, ReferenceTarget>;
+}
+
 export interface MarkdownRenderOptions {
   readonly headingNumbers?: HeadingNumbers;
   /** Override citation and bibliography text formatting, for example with a host-installed CSL processor. */
   readonly citationFormatter?: CitationFormatter;
+  /** Publication-wide reference targets. These take precedence over labels declared in the current document. */
+  readonly referenceTargets?: ReadonlyMap<string, ReferenceTarget>;
 }
 
 export interface SyncMarkdownRenderOptions extends Omit<MarkdownRenderOptions, "citationFormatter"> {
@@ -81,8 +94,8 @@ export interface SyncMarkdownRenderOptions extends Omit<MarkdownRenderOptions, "
 }
 
 /** Validate a document using the same syntax and native-figure rules as rendering. */
-export function diagnose(source: string, bibliographySource = ""): Diagnostic[] {
-  const prepared = prepareRender(source, bibliographySource);
+export function diagnose(source: string, bibliographySource = "", options: DiagnoseOptions = {}): Diagnostic[] {
+  const prepared = prepareRender(source, bibliographySource, options.referenceTargets);
   return [...prepared.diagnostics, ...validateNativeFigureSyntax(projectMarkdownSemantics(prepared.normalized))].sort(
     (left, right) => left.from - right.from,
   );
@@ -142,7 +155,17 @@ const previewSchema: Schema = {
   tagNames: safeElements,
   attributes: {
     "*": ["dataSourceFrom", "dataSourceTo"],
-    a: ["ariaDescribedBy", "ariaLabel", "className", "dataFootnoteBackref", "dataFootnoteRef", "href", "id", "title"],
+    a: [
+      "ariaDescribedBy",
+      "ariaLabel",
+      "className",
+      "dataFootnoteBackref",
+      "dataFootnoteRef",
+      "dataReference",
+      "href",
+      "id",
+      "title",
+    ],
     button: ["ariaLabel", "className", "dataCitation", "dataLocator", ["type", "button"]],
     code: ["className"],
     figure: ["className", "id"],
@@ -203,7 +226,7 @@ export async function renderTree(
   citationStyle: CitationStyle = "apa",
   options: MarkdownRenderOptions = {},
 ): Promise<RenderedTreeDocument> {
-  const prepared = prepareRender(source, bibliographySource);
+  const prepared = prepareRender(source, bibliographySource, options.referenceTargets);
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
@@ -221,7 +244,7 @@ export function renderTreeSync(
   citationStyle: CitationStyle = "apa",
   options: SyncMarkdownRenderOptions = {},
 ): RenderedTreeDocument {
-  const prepared = prepareRender(source, bibliographySource);
+  const prepared = prepareRender(source, bibliographySource, options.referenceTargets);
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
@@ -245,13 +268,18 @@ interface PreparedRender {
   readonly diagnostics: Diagnostic[];
 }
 
-function prepareRender(source: string, bibliographySource: string): PreparedRender {
+function prepareRender(
+  source: string,
+  bibliographySource: string,
+  referenceTargets: ReadonlyMap<string, ReferenceTarget> = new Map(),
+): PreparedRender {
   const normalized = source.replaceAll("\r\n", "\n");
   const comments = projectMarkdownComments(normalized);
   const semanticSource = projectMarkdownSemantics(normalized);
   const bibliography = parseBibliography(bibliographySource);
   const citedIds = collectCitationIds(semanticSource);
   const references = collectReferences(semanticSource);
+  for (const [label, target] of referenceTargets) references.set(label, target);
   const diagnostics = [
     ...(comments.unclosedFrom === null
       ? []
@@ -529,7 +557,11 @@ function renderSemanticDirectives(options: SemanticOptions) {
         directive.data = {
           ...directive.data,
           hName: "a",
-          hProperties: { className: ["semantic-reference"], href: `#${reference?.slug ?? slugify(target)}` },
+          hProperties: {
+            className: ["semantic-reference"],
+            dataReference: target,
+            href: reference?.href ?? `#${slugify(target)}`,
+          },
           hChildren: [{ type: "text", value: label }],
         };
         return;
@@ -746,7 +778,7 @@ function collectReferences(source: string): Map<string, ReferenceEntry> {
     const target = label[1]?.trim() ?? "";
     const nextBlock = nextNonBlankLine(source, (label.index ?? 0) + label[0].length);
     if (target && nextBlock && !/^::label\[/iu.test(nextBlock.value) && !references.has(target)) {
-      references.set(target, { title: headingsByOffset.get(nextBlock.offset) ?? target, slug: target });
+      references.set(target, { title: headingsByOffset.get(nextBlock.offset) ?? target, href: `#${target}` });
     }
   }
   return references;
