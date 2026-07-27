@@ -2,8 +2,8 @@
   "name": "scholarmark-vscode",
   "displayName": "Scholarmark",
   "description": "Syntax highlighting and language intelligence for Scholarmark documents",
-  "version": "0.1.0",
-  "publisher": "bebraw",
+  "version": "0.2.0",
+  "publisher": "survivejs",
   "license": "MIT",
   "engines": {
     "vscode": "^1.91.0"
