@@ -1,0 +1,220 @@
+import { describe, expect, it } from "vitest";
+import {
+  isPublicationBibliographyDirective,
+  isPublicationReferenceDeclaration,
+  publicationBibliographyText,
+  publicationCitationAuthorLabel,
+  publicationCitationEntries,
+  publicationCitationText,
+  publicationReferenceLabel,
+  publicationReferenceLabels,
+  replacePublicationTextDirectives,
+  type PublicationCitationEntry,
+  type PublicationTextDirective,
+} from "../src/scholarly-export";
+
+describe("scholarly publication projection", () => {
+  it("parses complete supported text directives without retaining their attributes", () => {
+    const seen: PublicationTextDirective[] = [];
+    const projected = replacePublicationTextDirectives(
+      'See :cite[doe2026, roe2025]{mode=textual locator="p. 4" prefix="Compare " suffix="."} and :ref[sec:result]{text="custom label"}.',
+      (directive) => {
+        seen.push(directive);
+        return directive.kind === "cite" ? "CITATION" : "REFERENCE";
+      },
+    );
+
+    expect(projected).toBe("See CITATION and REFERENCE.");
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ kind: "cite", content: "doe2026, roe2025" });
+    expect(Object.fromEntries(seen[0]!.attributes)).toEqual({
+      mode: "textual",
+      locator: "p. 4",
+      prefix: "Compare ",
+      suffix: ".",
+    });
+    expect(seen[1]).toMatchObject({ kind: "ref", content: "sec:result" });
+    expect(Object.fromEntries(seen[1]!.attributes)).toEqual({ text: "custom label" });
+    expect(replacePublicationTextDirectives(":unknown[value] and ::label[value]", () => "changed")).toBe(
+      ":unknown[value] and ::label[value]",
+    );
+  });
+
+  it("normalizes natbib-style citation shortcuts to citation modes", () => {
+    const seen: PublicationTextDirective[] = [];
+    expect(
+      replacePublicationTextDirectives(":citet[doe2026] and :citep[roe2025] and :citet[full]{mode=full}", (directive) => {
+        seen.push(directive);
+        return directive.attributes.get("mode") ?? "default";
+      }),
+    ).toBe("textual and parenthetical and full");
+    expect(seen.map((directive) => directive.kind)).toEqual(["cite", "cite", "cite"]);
+  });
+
+  it("resolves heading, non-heading, custom, and fallback reference labels", () => {
+    const markdown = `::label[sec-results]
+## *Results*
+
+::label[table:one]
+| Value |
+| ---: |
+| 42 |`;
+    const labels = publicationReferenceLabels(markdown);
+    expect(Object.fromEntries(labels)).toEqual({
+      "sec-results": "Results",
+      "table:one": "table:one",
+    });
+    const directive = (content: string, attributes: ReadonlyMap<string, string>): PublicationTextDirective => ({
+      kind: "ref",
+      content,
+      attributes,
+    });
+    expect(publicationReferenceLabel(directive("sec-results", new Map()), labels)).toBe("Results");
+    expect(publicationReferenceLabel(directive("table:one", new Map([["text", "custom *label*"]])), labels)).toBe("custom label");
+    expect(publicationReferenceLabel(directive("table:one", new Map()), labels)).toBe("table:one");
+    expect(publicationReferenceLabel(directive("unknown", new Map()), labels)).toBe("unknown");
+  });
+
+  it("recognizes only complete supported reference declaration lines", () => {
+    expect(isPublicationReferenceDeclaration("  ::label[table:one]  ")).toBe(true);
+    for (const line of [
+      '::alias[Legacy]{target="sec:legacy" slug=legacy}',
+      "prefix ::label[table:one]",
+      "::include[file.md]",
+      "::unknown[value]{target=x}",
+      "::label[x]{text=extra}",
+    ]) {
+      expect(isPublicationReferenceDeclaration(line), line).toBe(false);
+    }
+  });
+
+  it("recognizes and formats explicit bibliography placement", () => {
+    expect(isPublicationBibliographyDirective("::bibliography[]")).toBe(true);
+    expect(isPublicationBibliographyDirective("  ::bibliography[]  ")).toBe(true);
+    for (const line of ["::bibliography", "::bibliography[all]", "prefix ::bibliography[]", "::bibliography[]{scope=all}"]) {
+      expect(isPublicationBibliographyDirective(line), line).toBe(false);
+    }
+    const entry = publicationCitationEntries("@article{doe2026, author={Doe, Jane}, title={Methods}, year={2026}}").get("doe2026")!;
+    expect(publicationBibliographyText(entry, "apa")).toBe("Doe, Jane (2026). Methods.");
+    expect(publicationBibliographyText(entry, "chicago-author-date")).toBe("Doe, Jane. 2026. Methods.");
+    expect(publicationBibliographyText(entry, "ieee")).toBe("[1] Doe, Jane, “Methods,” 2026.");
+    expect(publicationBibliographyText({ ...entry, authors: [], title: "", year: "" }, "apa")).toBe("doe2026 (n.d.). doe2026.");
+  });
+
+  it("renders citation metadata through each bounded publication profile", () => {
+    const bibliography = publicationCitationEntries(
+      "@article{doe2026, author={Doe, Jane}, title={Methods}, year={2026}}\n@article{roe2025, author={Roe, Alex}, title={Results}, year={2025}}",
+    );
+    const parsed = (source: string): PublicationTextDirective => {
+      let directive: PublicationTextDirective | undefined;
+      replacePublicationTextDirectives(source, (value) => {
+        directive = value;
+        return "";
+      });
+      if (!directive) throw new Error("Expected a publication directive");
+      return directive;
+    };
+
+    expect(publicationCitationText(parsed(':cite[doe2026, roe2025]{locator="p. 4"}'), bibliography, "apa")).toBe(
+      "(Doe, 2026; Roe, 2025), p. 4",
+    );
+    expect(publicationCitationText(parsed(":cite[doe2026, roe2025]"), bibliography, "chicago-author-date")).toBe("(Doe 2026; Roe 2025)");
+    expect(publicationCitationText(parsed(':cite[doe2026]{mode=textual prefix="See " suffix="."}'), bibliography, "ieee")).toBe(
+      "See Doe [1].",
+    );
+    expect(publicationCitationText(parsed(":cite[doe2026]{mode=full}"), bibliography, "apa")).toBe("Doe. 2026. Methods");
+    expect(publicationCitationText(parsed(":cite[missing]"), bibliography, "apa")).toBe("(missing, n.d.)");
+    expect(publicationCitationText(parsed(":citet[doe2026]"), bibliography, "apa")).toBe("Doe (2026)");
+    expect(publicationCitationText(parsed(":citep[doe2026]"), bibliography, "apa")).toBe("(Doe, 2026)");
+  });
+
+  it("compacts inline author lists after two authors", () => {
+    const bibliography = publicationCitationEntries(
+      `@article{solo, author={Doe, Jane}, title={Solo}, year={2026}}
+@article{pair, author={Jane Doe and Roe, Richard}, title={Pair}, year={2025}}
+@article{group, author={Louise Conilh and Lenka Sadílková and Warren Viricel and Charles Dumontet}, title={Group}, year={2023}}
+@article{organization, author={{Research Collective}}, title={Organization}, year={2022}}`,
+    );
+    const parsed = (source: string): PublicationTextDirective => {
+      let directive: PublicationTextDirective | undefined;
+      replacePublicationTextDirectives(source, (value) => {
+        directive = value;
+        return "";
+      });
+      if (!directive) throw new Error("Expected a publication directive");
+      return directive;
+    };
+
+    expect(publicationCitationAuthorLabel(bibliography.get("solo")!)).toBe("Doe");
+    expect(publicationCitationAuthorLabel(bibliography.get("pair")!)).toBe("Doe and Roe");
+    expect(publicationCitationAuthorLabel(bibliography.get("group")!)).toBe("Conilh et al.");
+    expect(publicationCitationAuthorLabel(bibliography.get("organization")!)).toBe("Research Collective");
+    expect(publicationCitationText(parsed(":cite[group]"), bibliography, "apa")).toBe("(Conilh et al., 2023)");
+    expect(publicationCitationText(parsed(":citet[group]"), bibliography, "chicago-author-date")).toBe("Conilh et al. (2023)");
+    expect(publicationCitationText(parsed(":citet[group]"), bibliography, "ieee")).toBe("Conilh et al. [3]");
+    expect(publicationCitationText(parsed(":cite[pair]"), bibliography, "apa")).toBe("(Doe and Roe, 2025)");
+    expect(publicationBibliographyText(bibliography.get("group")!, "apa")).toContain(
+      "Conilh, Louise and Sadílková, Lenka and Viricel, Warren and Dumontet, Charles",
+    );
+  });
+
+  it("lets a host formatter consume Citation.js CSL-JSON", () => {
+    const bibliography = publicationCitationEntries(
+      "@article{doe2026, author={Doe, Jane}, title={Methods}, journal={Evidence}, year={2026}}",
+    );
+    let directive: PublicationTextDirective | undefined;
+    replacePublicationTextDirectives(":cite[doe2026]", (value) => {
+      directive = value;
+      return "";
+    });
+    if (!directive) throw new Error("Expected a publication directive");
+
+    const formatter = {
+      formatCitation: (entry: PublicationCitationEntry) => `${entry.data["container-title"]}: ${entry.title}`,
+      formatBibliography: (entry: PublicationCitationEntry) => `CSL bibliography for ${entry.id}`,
+    };
+
+    expect(publicationCitationText(directive, bibliography, "apa", formatter)).toBe("(Evidence: Methods)");
+    expect(publicationBibliographyText(bibliography.get("doe2026")!, "apa", formatter)).toBe("CSL bibliography for doe2026");
+  });
+
+  it("uses exact multi-entry separators and identifier fallbacks in every mode", () => {
+    const bibliography = publicationCitationEntries(
+      "@article{doe2026, author={Doe, Jane}, title={Methods}, year={2026}}\n" +
+        "@article{roe2025, author={Roe, Alex}, title={Results}, year={2025}}",
+    );
+    const parsed = (source: string): PublicationTextDirective => {
+      let directive: PublicationTextDirective | undefined;
+      replacePublicationTextDirectives(source, (value) => {
+        directive = value;
+        return "";
+      });
+      if (!directive) throw new Error("Expected a publication directive");
+      return directive;
+    };
+
+    expect(publicationCitationText(parsed(":cite[doe2026, roe2025]"), bibliography, "ieee")).toBe("[1, 2]");
+    expect(publicationCitationText(parsed(":citet[doe2026, roe2025]"), bibliography, "apa")).toBe("Doe (2026), Roe (2025)");
+    expect(publicationCitationText(parsed(":cite[missing]"), bibliography, "ieee")).toBe("[missing]");
+    expect(publicationCitationText(parsed(":citet[missing]"), bibliography, "ieee")).toBe("missing [missing]");
+    expect(publicationCitationText(parsed(":cite[missing]{mode=full}"), bibliography, "apa")).toBe("missing. n.d.. missing");
+  });
+
+  it("normalizes irregular author lists and punctuation-heavy reference slugs", () => {
+    expect(publicationCitationAuthorLabel({ id: "spaced", authors: [{ family: "Doe" }, { family: "Roe" }] })).toBe("Doe and Roe");
+    expect(publicationCitationAuthorLabel({ id: "organization", authors: [{ literal: "Open collective" }] })).toBe("Open collective");
+    expect(publicationCitationAuthorLabel({ id: "empty", authors: [] })).toBe("empty");
+
+    expect(
+      Object.fromEntries(
+        publicationReferenceLabels(
+          `::label[a-b]\n## --A   B--\n::label[explicit]\n## \`Code\` & *Evidence*\n::label[anchor]\nParagraph`,
+        ),
+      ),
+    ).toEqual({
+      "a-b": "--A   B--",
+      explicit: "Code & Evidence",
+      anchor: "anchor",
+    });
+  });
+});

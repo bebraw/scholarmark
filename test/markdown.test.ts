@@ -1,0 +1,652 @@
+import { describe, expect, it } from "vitest";
+import { headingNumbersByOffset, parseBibliography, render as renderAsync, renderSync as render, slugify } from "../src/markdown";
+
+const bibliography = `@article{merton1942,
+  author = {Merton, Robert K.},
+  title = {The Normative Structure of Science},
+  year = {1942}
+}
+`;
+
+function withoutSourcePositions(html: string): string {
+  return html.replaceAll(/ data-source-(?:from|to)="\d+"/gu, "");
+}
+
+describe("render", () => {
+  it("keeps asynchronous and synchronous rendering equivalent", async () => {
+    const source = "## Evidence\n\nSee :cite[merton1942].\n\n::bibliography[]";
+
+    expect(await renderAsync(source, bibliography)).toEqual(render(source, bibliography));
+  });
+
+  it("awaits asynchronous citation formatters only on the asynchronous path", async () => {
+    const source = "See :cite[merton1942].\n\n::bibliography[]";
+    const citationFormatter = {
+      formatCitation: async () => "citation from remote data",
+      formatBibliography: async () => "bibliography from remote data",
+    };
+
+    const asynchronous = await renderAsync(source, bibliography, "apa", { citationFormatter });
+    expect(asynchronous.html).toContain(">citation from remote data</button>");
+    expect(asynchronous.html).toContain("<li>bibliography from remote data</li>");
+
+    const synchronous = render(source, bibliography, "apa", { citationFormatter });
+    expect(synchronous.diagnostics.at(-1)?.message).toMatch(/async/iu);
+  });
+
+  it("renders an accessible deterministic native boxplot", () => {
+    const source = `::label[fig:fcp-summary]
+:::figure{kind="boxplot" version=1 x-label="Time (ms)" y-label="Variant"}
+::box[SSR & FCP]{min=1613 q1=1627 median=1628 q3=1632 max=1641}
+::box[Islands]{min=838 q1=838 median=838 q3=846 max=858}
+::caption[First Contentful Paint across five benchmark runs.]
+:::`;
+
+    const rendered = render(source, "");
+    const html = withoutSourcePositions(rendered.html);
+    const figureFrom = source.indexOf(":::figure");
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(html).toContain('<span class="semantic-label" id="fig:fcp-summary"></span>');
+    expect(html).toContain('<figure class="native-figure native-figure-boxplot">');
+    expect(html).toContain(`<svg viewBox="0 0 720 168" role="img" aria-labelledby="native-figure-title-${figureFrom}"`);
+    expect(html).toContain(
+      `<title id="native-figure-title-${figureFrom}">First Contentful Paint across five benchmark runs.</title>`,
+    );
+    expect(html).toContain('class="native-figure-box"');
+    expect(html).toContain("SSR &#x26; FCP");
+    expect(html).toContain("<figcaption>First Contentful Paint across five benchmark runs.</figcaption>");
+    expect(html).not.toMatch(/(?:NaN|Infinity)/u);
+  });
+
+  it("keeps invalid native figure syntax visible and reports its source range", () => {
+    const source = `:::figure{kind="boxplot" version=1}
+::box[Broken]{min=5 q1=4 median=3 q3=2 max=1}
+::caption[Needs correction]
+:::`;
+    const rendered = render(source, "");
+
+    expect(rendered.diagnostics).toContainEqual({
+      severity: "error",
+      message: "Box values must satisfy min <= q1 <= median <= q3 <= max",
+      from: source.indexOf("::box"),
+      to: source.indexOf("\n::caption"),
+    });
+    expect(rendered.html).toContain('class="native-figure-error"');
+    expect(rendered.html).toContain(":::figure");
+    expect(rendered.html).not.toContain("<svg");
+  });
+
+  it("rejects native figure children outside their container", () => {
+    const rendered = render("::box[Loose]{min=1 q1=2 median=3 q3=4 max=5}", "");
+
+    expect(rendered.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(["::box must be inside a :::figure container"]);
+    expect(rendered.html).toContain("::box[Loose]");
+  });
+
+  it("retains sanitized source offsets on rendered elements", () => {
+    const rendered = render("## Evidence\n\nMapped paragraph.", "");
+
+    expect(rendered.html).toContain('data-source-from="0" data-source-to="11"');
+    expect(rendered.html).toContain('data-source-from="13" data-source-to="30"');
+  });
+
+  it("renders project citation profiles without changing citation identity", () => {
+    const source = "Evidence :cite[merton1942, doe2026].";
+    const sources = `${bibliography}\n@article{doe2026, author={Doe, Jane}, year={2026}, title={Methods}}`;
+    const text = (style: "apa" | "chicago-author-date" | "ieee") =>
+      render(source, sources, style).html.replaceAll(/<[^>]+>/gu, "");
+    expect(text("apa")).toContain("(Merton, 1942; Doe, 2026)");
+    expect(text("chicago-author-date")).toContain("(Merton 1942; Doe 2026)");
+    expect(text("ieee")).toContain("[1, 2]");
+  });
+  it("uses a host citation formatter while preserving interactive citation markup", () => {
+    const source = "Evidence :cite[merton1942].\n\n::bibliography[]";
+    const rendered = render(source, bibliography, "apa", {
+      citationFormatter: {
+        formatCitation: (entry, context) => `custom ${entry.data.type} ${context.mode}`,
+        formatBibliography: (entry) => `custom bibliography ${entry.id}`,
+      },
+    });
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(rendered.html).toContain('data-citation="merton1942"');
+    expect(rendered.html).toContain(">custom article-journal parenthetical</button>");
+    expect(rendered.html).toContain("<li>custom bibliography merton1942</li>");
+  });
+  it("renders natbib-style textual and parenthetical citation shortcuts", () => {
+    const rendered = render("As :citet[merton1942] argues; compare :citep[merton1942].", bibliography);
+    expect(rendered.diagnostics).toEqual([]);
+    const text = rendered.html.replaceAll(/<[^>]+>/gu, "");
+    expect(text).toContain("As Merton (1942) argues; compare (Merton, 1942).");
+    expect(rendered.html.match(/data-citation="merton1942"/gu)).toHaveLength(2);
+  });
+  it("compacts preview citations with more than two authors", () => {
+    const sources = `@article{conilh2023,
+      author={Louise Conilh and Lenka Sadílková and Warren Viricel and Charles Dumontet},
+      title={A collaborative study},
+      year={2023}
+    }`;
+    const rendered = render("As :citet[conilh2023] reports; compare :citep[conilh2023].", sources);
+    const text = rendered.html.replaceAll(/<[^>]+>/gu, "");
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(text).toContain("As Conilh et al. (2023) reports; compare (Conilh et al., 2023).");
+    expect(text).not.toContain("Sadílková");
+  });
+  it("renders meaningful Markdown and extended scholarly directives", () => {
+    const source = `::label[sec-legacy]
+## Evidence
+
+Text with **weight**, *emphasis*, \`code\`, [source](https://example.com), :cite[merton1942]{mode=textual locator="p. 4"}, and :ref[sec-legacy]{text="Evidence"}.
+
+::label[table:one]
+
+- one
+- two
+
+\`\`\`ts
+const answer = 42;
+\`\`\`
+`;
+    const rendered = render(source, bibliography);
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(html).toContain('<span class="semantic-label" id="sec-legacy"></span>');
+    expect(html).toContain('<h2 id="evidence"><span class="section-number">1 </span>Evidence</h2>');
+    expect(html).toContain(
+      '<button type="button" class="semantic-citation" data-citation="merton1942" data-locator="p. 4" aria-label="Open reference The Normative Structure of Science">Merton (1942)</button>, p. 4',
+    );
+    expect(html).toContain('<a class="semantic-reference"');
+    expect(html).toContain("<strong>weight</strong>");
+    expect(html).toContain("<li>one</li>");
+    expect(html).toContain("<li>two</li>");
+    expect(html).toContain("const answer = 42;");
+    expect(html).toContain('<span class="semantic-label" id="table:one"></span>');
+    expect(html).toContain('<a class="semantic-reference" href="#sec-legacy">Evidence</a>');
+    expect(html).toContain('<code class="language-ts">const answer = 42;');
+  });
+
+  it("reports missing, duplicate, empty, and unsupported directives", () => {
+    const source = `::label[same]
+## One
+::label[same]
+## Two
+
+:cite[missing]{mode="unknown"} :cite[] :ref[absent] :ref[]
+`;
+    const messages = render(source, bibliography).diagnostics.map((diagnostic) => diagnostic.message);
+
+    expect(messages).toContain("Missing citation: missing");
+    expect(messages).toContain("Unsupported citation mode: unknown");
+    expect(messages).toContain("Citation requires an id");
+    expect(messages).toContain("Missing label: absent");
+    expect(messages).toContain("Reference requires a label id");
+    expect(messages).toContain("Duplicate label: same");
+    expect(messages).toEqual([
+      "Duplicate label: same",
+      "Unsupported citation mode: unknown",
+      "Missing citation: missing",
+      "Citation requires an id",
+      "Missing label: absent",
+      "Reference requires a label id",
+    ]);
+  });
+
+  it("renders full and parenthetical citations and closes an open code fence", () => {
+    const source = `## Notes
+
+:cite[merton1942]{mode="full" prefix="See " suffix="."}
+
+:cite[merton1942]
+
+\`\`\`
+unfinished`;
+    const rendered = render(source, bibliography);
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(html).toContain("See <button");
+    expect(html).toContain(">Merton. 1942. The Normative Structure of Science</button>.");
+    expect(html).toContain(
+      '(<button type="button" class="semantic-citation" data-citation="merton1942" aria-label="Open reference The Normative Structure of Science">Merton, 1942</button>)',
+    );
+    expect(html).toContain("unfinished\n</code></pre>");
+    expect(html).toContain('<h2 id="notes"><span class="section-number">1 </span>Notes</h2>');
+  });
+
+  it("renders cited references at an explicit bibliography marker", () => {
+    const sources = `${bibliography}\n@article{unused, author={Unused, Una}, year={2025}, title={Unused work}}`;
+    const rendered = render("Evidence :cite[merton1942].\n\n## References\n\n::bibliography[]", sources);
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(html).toContain('<ol class="semantic-bibliography"><li>Merton, Robert K. (1942). The Normative Structure of Science.</li></ol>');
+    expect(html).not.toContain("Unused work");
+  });
+
+  it("diagnoses malformed and duplicate bibliography markers", () => {
+    const source = "::bibliography[all]\n::bibliography[]{scope=project}\n::bibliography[]\n::bibliography[]";
+    const malformed = "::bibliography[all]";
+    const scoped = "::bibliography[]{scope=project}";
+    const firstDuplicate = source.indexOf("\n::bibliography[]\n") + 1;
+    const secondDuplicate = source.lastIndexOf("::bibliography[]");
+
+    expect(render(source, bibliography).diagnostics).toEqual([
+      {
+        severity: "error",
+        message: "Bibliography marker must be exactly ::bibliography[]",
+        from: source.indexOf(malformed),
+        to: source.indexOf(malformed) + malformed.length,
+      },
+      {
+        severity: "error",
+        message: "Bibliography marker must be exactly ::bibliography[]",
+        from: source.indexOf(scoped),
+        to: source.indexOf(scoped) + scoped.length,
+      },
+      {
+        severity: "error",
+        message: "Duplicate bibliography marker",
+        from: firstDuplicate,
+        to: firstDuplicate + "::bibliography[]".length,
+      },
+      {
+        severity: "error",
+        message: "Duplicate bibliography marker",
+        from: secondDuplicate,
+        to: secondDuplicate + "::bibliography[]".length,
+      },
+    ]);
+  });
+
+  it("normalizes CRLF, joins paragraph lines, and renders heading levels", () => {
+    const html = withoutSourcePositions(render("### Three\r\n\r\nline one\r\nline two\r\n\r\n#### Four", "").html);
+    expect(html).toContain('<h3 id="three"><span class="section-number">0.1 </span>Three</h3>');
+    expect(html).toContain("<p>line one\nline two</p>");
+    expect(html).toContain("<b>Four</b>");
+    expect(render("", "")).toEqual({ html: "", diagnostics: [] });
+  });
+
+  it("derives composed heading numbers and applies source-positioned overrides", () => {
+    const source = "## Introduction\n\n::: comment\n## Hidden\n:::\n\n```md\n## Literal\n```\n\n## Method\n\n### Detail\n";
+    const methodOffset = source.indexOf("## Method");
+    const detailOffset = source.indexOf("### Detail");
+
+    expect(headingNumbersByOffset(source)).toEqual({ 0: "1", [methodOffset]: "2", [detailOffset]: "2.1" });
+
+    const isolated = "## Method\n\n### Detail\n";
+    const html = withoutSourcePositions(
+      render(isolated, "", "apa", {
+        headingNumbers: { 0: "2", [isolated.indexOf("### Detail")]: "2.1" },
+      }).html,
+    );
+    expect(html).toContain('<h2 id="method"><span class="section-number">2 </span>Method</h2>');
+    expect(html).toContain('<h3 id="detail"><span class="section-number">2.1 </span>Detail</h3>');
+  });
+
+  it("renders the documented GFM surface through the JavaScript pipeline", () => {
+    const source = `---
+title: Hidden frontmatter
+---
+
+## Syntax
+
+![diagram](https://example.com/diagram.png)
+
+| Method | Result |
+| --- | --- |
+| A | ~~41~~ **42** |
+
+1. first
+2. second
+
+A statement with detail.[^detail]
+
+[^detail]: Supporting *detail*.
+`;
+    const rendered = render(source, "");
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(html).not.toContain("Hidden frontmatter");
+    expect(html).toContain('<img src="https://example.com/diagram.png" alt="diagram">');
+    expect(html).toContain("<table>");
+    expect(html).toContain("<del>41</del> <strong>42</strong>");
+    expect(html).toContain("<ol>");
+    expect(html).toContain("data-footnote-ref");
+    expect(html).toContain('data-footnotes class="footnotes"');
+  });
+
+  it("omits comment blocks and ignores their Markdown semantics", () => {
+    const rendered = render(
+      `## Visible
+
+::: comment
+## Hidden {#hidden}
+Unpublished :cite[missing] and :unknown[value].
+:::
+
+After the comment.`,
+      "",
+    );
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(rendered.html).toContain("Visible");
+    expect(rendered.html).toContain("After the comment.");
+    expect(rendered.html).not.toContain("Hidden");
+    expect(rendered.html).not.toContain("Unpublished");
+    expect(rendered.html).not.toContain('id="hidden"');
+  });
+
+  it("diagnoses an unclosed comment without rendering its contents", () => {
+    const rendered = render("Before\n\n::: comment\nHidden", "");
+    expect(rendered.diagnostics).toEqual([{ severity: "error", message: "Comment block is not closed", from: 8, to: 19 }]);
+    expect(rendered.html).toContain("Before");
+    expect(rendered.html).not.toContain("Hidden");
+  });
+
+  it("validates unsupported directives", () => {
+    const source = `::unknown[value]
+:::unknown
+content
+:::
+
+::alias[Missing]{target="sec:missing" slug="missing"}
+::anchor[Missing]{target="table:missing"}
+
+## Present
+
+:unknown[value]
+# Chapter title
+`;
+    const exact = (message: string, fragment: string, from = source.indexOf(fragment)) => ({
+      severity: "error",
+      message,
+      from,
+      to: from + fragment.length,
+    });
+    const rendered = render(source, "");
+    expect(rendered.diagnostics).toEqual([
+      exact("Unsupported leaf directive: ::unknown", "::unknown[value]"),
+      exact("Unsupported container directive: :::unknown", ":::unknown"),
+      exact("Unsupported leaf directive: ::alias", '::alias[Missing]{target="sec:missing" slug="missing"}'),
+      exact("Unsupported leaf directive: ::anchor", '::anchor[Missing]{target="table:missing"}\n'),
+      exact("Unsupported text directive: :unknown", ":unknown[value]", source.lastIndexOf(":unknown[value]")),
+    ]);
+    expect(withoutSourcePositions(rendered.html)).toContain("<h1>Chapter title</h1>");
+  });
+
+  it("uses one label syntax for a level-one title reference", () => {
+    const rendered = render("::label[study]\n\n# Study\n\nSee :ref[study].", "");
+
+    expect(rendered.diagnostics).toEqual([]);
+    const html = withoutSourcePositions(rendered.html);
+    expect(html).toContain('<span class="semantic-label" id="study"></span>');
+    expect(html).toContain("<h1>Study</h1>");
+    expect(html).toContain('<a class="semantic-reference" href="#study">Study</a>');
+  });
+
+  it("renders authored HTML as text and removes unsafe link targets", () => {
+    const rendered = render(
+      '<img src=x onerror="alert(1)"> <button type="button" onclick="alert(1)">authored</button>\n\n[unsafe](javascript:alert(1)) ![unsafe](data:image/svg+xml,evil) [safe](mailto:test@example.org)',
+      "",
+    );
+
+    expect(rendered.html).toContain('&#x3C;img src=x onerror="alert(1)">');
+    expect(rendered.html).not.toContain("<img src=x onerror");
+    expect(rendered.html).toContain('&#x3C;button type="button" onclick="alert(1)">authored&#x3C;/button>');
+    expect(rendered.html).not.toContain('<button type="button" onclick=');
+    expect(rendered.html).not.toContain("javascript:");
+    expect(rendered.html).not.toContain("data:image");
+    expect(rendered.html).toContain('href="mailto:test@example.org"');
+  });
+
+  it("rejects heading ids in favor of labels", () => {
+    const source = "## Safe heading {#safe}";
+    const rendered = render(source, "");
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics).toEqual([
+      { severity: "error", message: "Heading ids are not supported; use ::label[id]", from: 0, to: source.length },
+    ]);
+    expect(html).toContain("Safe heading {#safe}");
+  });
+
+  it("preserves the complete reviewed Markdown element and property vocabulary", () => {
+    const rendered = render(
+      `# One
+
+## Two
+
+### Three
+
+#### Four
+
+##### Five
+
+###### Six
+
+> quote with *emphasis* and **strong**
+
+---
+
+[link](https://example.com "title")  
+next with \`inline\`
+
+\`\`\`ts
+const x = 1
+\`\`\`
+
+- [x] task
+- item
+
+3. third
+4. fourth
+
+| Left | Right |
+| :--- | ---: |
+| ~~old~~ | new |
+
+![diagram](https://example.com/a.png "diagram")
+
+Footnote.[^a]
+
+[^a]: Note.
+`,
+      "",
+    );
+    const html = withoutSourcePositions(rendered.html);
+
+    for (const fragment of [
+      "<h1>One</h1>",
+      '<h2 id="two"><span class="section-number">',
+      '<h3 id="three"><span class="section-number">',
+      "<b>Four</b>",
+      "<h5>Five</h5>",
+      "<h6>Six</h6>",
+      "<blockquote>",
+      "<p>quote with <em>emphasis</em> and <strong>strong</strong></p>",
+      "<hr>",
+      '<a href="https://example.com" title="title">',
+      "<br>",
+      "<code>inline</code>",
+      '<pre><code class="language-ts">',
+      '<ul class="contains-task-list">',
+      '<li class="task-list-item"><input type="checkbox" checked disabled>',
+      '<ol start="3">',
+      "<table>",
+      "<thead>",
+      "<tbody>",
+      "<tr>",
+      '<th style="text-align: left">',
+      '<td style="text-align: right">',
+      "<del>old</del>",
+      '<img src="https://example.com/a.png" alt="diagram" title="diagram">',
+      '<sup><a href="#user-content-fn-a" id="user-content-fnref-a" data-footnote-ref aria-describedby="footnote-label">',
+      '<section data-footnotes class="footnotes">',
+      'data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref"',
+    ]) {
+      expect(html).toContain(fragment);
+    }
+  });
+
+  it("resolves labels on headings and other blocks with multiple citations", () => {
+    const extendedBibliography = `${bibliography}
+@article{doe2026,
+  author = {Doe, Jane},
+  title = {Inspectable Results},
+  year = {2026}
+}
+`;
+    const rendered = render(
+      `::label[sec:legacy]
+## Repeated
+
+## Repeated
+
+::label[table:one]
+| Value |
+| ---: |
+| 42 |
+
+:ref[sec:legacy] :ref[table:one]{text="custom table"}
+
+:cite[merton1942, doe2026]{mode=textual prefix="See " suffix=" for context" locator="p. 4"}
+`,
+      extendedBibliography,
+    );
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(html).toContain('<span class="semantic-label" id="sec:legacy"></span>');
+    expect(html).toContain('<h2 id="repeated"><span class="section-number">1 </span>Repeated</h2>');
+    expect(html).toContain('<h2 id="repeated-2"><span class="section-number">2 </span>Repeated</h2>');
+    expect(html).toContain('<a class="semantic-reference" href="#sec:legacy">1 Repeated</a>');
+    expect(html).toContain('<a class="semantic-reference" href="#table:one">custom table</a>');
+    expect(html).toContain("See <button");
+    expect(html).toContain(">Merton (1942)</button>, <button");
+    expect(html).toContain(">Doe (2026)</button>, p. 4 for context");
+  });
+
+  it("diagnoses incomplete label declarations", () => {
+    const source = "::label[]\nParagraph";
+    expect(render(source, "").diagnostics).toEqual([
+      { severity: "error", message: "Label requires an id", from: 0, to: "::label[]".length },
+    ]);
+  });
+
+  it("diagnoses invalid and unattached labels", () => {
+    const source = "::label[bad id]\nParagraph\n\n::label[orphan]";
+    const orphanFrom = source.indexOf("::label[orphan]");
+
+    expect(render(source, "").diagnostics).toEqual([
+      { severity: "error", message: "Invalid label id: bad id", from: 0, to: "::label[bad id]".length },
+      {
+        severity: "error",
+        message: "Label must precede a block",
+        from: orphanFrom,
+        to: orphanFrom + "::label[orphan]".length,
+      },
+    ]);
+  });
+
+  it("accepts trailing whitespace on a label", () => {
+    const rendered = render("::label[long-id]   \n\n## **Bold** tail", "");
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(html).toContain('<span class="semantic-label" id="long-id"></span>');
+    expect(html).toContain('<h2 id="bold-tail"><span class="section-number">1 </span><strong>Bold</strong> tail</h2>');
+  });
+
+  it("reports an unclosed first-line comment through the exact end of input", () => {
+    const source = "::: comment";
+    const rendered = render(source, "");
+
+    expect(rendered).toEqual({
+      html: "",
+      diagnostics: [{ severity: "error", message: "Comment block is not closed", from: 0, to: source.length }],
+    });
+  });
+
+  it("anchors label validation to complete multi-character lines", () => {
+    const source = `prefix ::bibliography[]
+::bibliography[all-long]{scope=project-long}${"  "}
+prefix :::unknown-container
+:::unknown-container extra words
+::label[target-long]${"  "}
+Paragraph
+::label[target-long]  
+Paragraph`;
+    const diagnostics = render(source, "").diagnostics;
+
+    expect(diagnostics.map(({ message }) => message)).toEqual([
+      "Bibliography marker must be exactly ::bibliography[]",
+      "Unsupported container directive: :::unknown-container",
+      "Duplicate label: target-long",
+    ]);
+    expect(diagnostics.map(({ from, to }) => source.slice(from, to))).toEqual([
+      "::bibliography[all-long]{scope=project-long}  ",
+      ":::unknown-container extra words",
+      "::label[target-long]  ",
+    ]);
+  });
+
+  it("renders exact fallback citation punctuation for several missing entries", () => {
+    const rendered = render(':cite[missing-a, missing-b]{mode=full prefix="Prefix " suffix=" suffix" locator="p. 9"}', "");
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics.map(({ message }) => message)).toEqual(["Missing citation: missing-a", "Missing citation: missing-b"]);
+    expect(html).toBe(
+      '<p><span class="semantic-citation-group">Prefix <button type="button" class="semantic-citation" data-citation="missing-a" data-locator="p. 9" aria-label="Open reference missing-a">missing-a. n.d.. missing-a</button>; <button type="button" class="semantic-citation" data-citation="missing-b" data-locator="p. 9" aria-label="Open reference missing-b">missing-b. n.d.. missing-b</button>, p. 9 suffix</span></p>',
+    );
+  });
+
+  it("accepts a level-one title before an unclosed comment", () => {
+    const source = "# Document title\n\n::: comment";
+    const rendered = render(source, "");
+
+    expect(rendered.diagnostics).toEqual([
+      { severity: "error", message: "Comment block is not closed", from: 18, to: source.length },
+    ]);
+    expect(withoutSourcePositions(rendered.html)).toContain("<h1>Document title</h1>");
+  });
+
+  it("renders a label on a non-heading block and rejects loose captions", () => {
+    const source = `## Section
+::label[table:value]
+| Value |
+| ---: |
+| 42 |
+
+:ref[table:value]{text="Custom label"}
+::caption[Loose caption]`;
+    const rendered = render(source, "");
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics.map(({ message }) => message)).toEqual(["::caption must be inside a :::figure container"]);
+    expect(html).toContain('<span class="semantic-label" id="table:value"></span>');
+    expect(html).toContain('<a class="semantic-reference" href="#table:value">Custom label</a>');
+    expect(html).toContain('<code class="native-figure-error">::caption[Loose caption]</code>');
+  });
+
+  it("normalizes uppercase semantic names and preserves unknown directive content", () => {
+    const rendered = render(":CITEP[merton1942] and :UNKNOWN[Visible fallback]", bibliography);
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics.map(({ message }) => message)).toEqual(["Unsupported text directive: :unknown"]);
+    expect(html.replaceAll(/<[^>]+>/gu, "")).toContain("(Merton, 1942)");
+    expect(html).toContain("Visible fallback");
+    expect(html).not.toContain("UNKNOWN");
+  });
+});
+
+describe("bibliography helpers", () => {
+  it("parses entries and produces stable slugs", () => {
+    expect(parseBibliography(bibliography).get("merton1942")).toMatchObject({ year: "1942" });
+    expect(slugify("  A Meaningful: Heading! ")).toBe("a-meaningful-heading");
+    expect(slugify("  `Mixed`___ punctuation / and spaces  ")).toBe("mixed-punctuation-and-spaces");
+    expect(slugify("`!`")).toBe("");
+  });
+});

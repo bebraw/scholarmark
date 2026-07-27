@@ -1,0 +1,75 @@
+{
+  "name": "scholarmark",
+  "version": "0.1.0",
+  "description": "A scientific Markdown specification and reference renderer",
+  "license": "MIT",
+  "author": "Juho Vepsäläinen",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "type": "module",
+  "sideEffects": [
+    "./dist/bibliography.js"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "SPECIFICATION.md",
+    "SYNTAX.md",
+    "NATIVE_FIGURES.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bebraw/scholarmark.git"
+  },
+  "scripts": {
+    "build": "npm run build:library && npm run build:vscode",
+    "build:library": "tsc -p tsconfig.json",
+    "build:vscode": "node editors/vscode/esbuild.mjs",
+    "package:vscode": "npm run build:vscode && npm --prefix editors/vscode run package",
+    "test": "vitest run",
+    "test:lsp": "npm run build:vscode && node scripts/smoke-language-server.mjs",
+    "typecheck": "npm run typecheck:library && npm run typecheck:vscode",
+    "typecheck:library": "tsc -p tsconfig.json --noEmit",
+    "typecheck:vscode": "tsc -p editors/vscode/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@citation-js/core": "0.8.2",
+    "@citation-js/plugin-bibtex": "0.8.2",
+    "@types/hast": "3.0.5",
+    "@types/mdast": "4.0.4",
+    "@types/unist": "3.0.3",
+    "rehype-sanitize": "6.0.0",
+    "rehype-stringify": "10.0.1",
+    "remark-directive": "4.0.0",
+    "remark-frontmatter": "5.0.0",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.2",
+    "unified": "11.0.5",
+    "unist-util-visit": "5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/vscode": "1.125.0",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "0.28.1",
+    "typescript": "7.0.2",
+    "vscode-languageclient": "10.1.0",
+    "vscode-languageserver": "10.1.0",
+    "vscode-languageserver-textdocument": "1.0.13",
+    "vscode-jsonrpc": "9.0.1",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2",
+    "vitest": "4.1.8"
+  }
+}

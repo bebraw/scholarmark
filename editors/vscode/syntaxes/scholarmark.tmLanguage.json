@@ -1,0 +1,103 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "scopeName": "scholarmark.markdown.injection",
+  "injectionSelector": "L:text.html.markdown - (comment, string, markup.fenced_code.block.markdown, markup.raw.block.markdown, meta.embedded.block.frontmatter)",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#text-directives" },
+    { "include": "#leaf-directives" },
+    { "include": "#figure-directive" }
+  ],
+  "repository": {
+    "comments": {
+      "begin": "^(\\s*)(:::)(?:\\s+)(comment)(?:\\s*)$",
+      "beginCaptures": {
+        "0": { "name": "comment.block.scholarmark" },
+        "2": { "name": "punctuation.definition.comment.begin.scholarmark" },
+        "3": { "name": "storage.type.comment.scholarmark" }
+      },
+      "end": "^(\\s*)(:::)(?:\\s*)$",
+      "endCaptures": {
+        "0": { "name": "comment.block.scholarmark" },
+        "2": { "name": "punctuation.definition.comment.end.scholarmark" }
+      },
+      "name": "comment.block.scholarmark"
+    },
+    "text-directives": {
+      "patterns": [
+        {
+          "begin": "(?<!:)(:)(cite|citet|citep|ref)(\\[)([^\\]\\r\\n]*)(\\])(\\{)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.directive.scholarmark" },
+            "2": { "name": "support.function.directive.scholarmark" },
+            "3": { "name": "punctuation.definition.arguments.begin.scholarmark" },
+            "4": { "name": "entity.name.label.scholarmark" },
+            "5": { "name": "punctuation.definition.arguments.end.scholarmark" },
+            "6": { "name": "punctuation.definition.attributes.begin.scholarmark" }
+          },
+          "end": "(\\})",
+          "endCaptures": { "1": { "name": "punctuation.definition.attributes.end.scholarmark" } },
+          "patterns": [{ "include": "#attributes" }]
+        },
+        {
+          "match": "(?<!:)(:)(cite|citet|citep|ref)(\\[)([^\\]\\r\\n]*)(\\])",
+          "captures": {
+            "1": { "name": "punctuation.definition.directive.scholarmark" },
+            "2": { "name": "support.function.directive.scholarmark" },
+            "3": { "name": "punctuation.definition.arguments.begin.scholarmark" },
+            "4": { "name": "entity.name.label.scholarmark" },
+            "5": { "name": "punctuation.definition.arguments.end.scholarmark" }
+          }
+        }
+      ]
+    },
+    "leaf-directives": {
+      "patterns": [
+        {
+          "begin": "^(\\s*)(::)(label|bibliography|box|caption)(\\[)([^\\]\\r\\n]*)(\\])(\\{)",
+          "beginCaptures": {
+            "2": { "name": "punctuation.definition.directive.scholarmark" },
+            "3": { "name": "support.function.directive.scholarmark" },
+            "4": { "name": "punctuation.definition.arguments.begin.scholarmark" },
+            "5": { "name": "entity.name.label.scholarmark" },
+            "6": { "name": "punctuation.definition.arguments.end.scholarmark" },
+            "7": { "name": "punctuation.definition.attributes.begin.scholarmark" }
+          },
+          "end": "(\\})",
+          "endCaptures": { "1": { "name": "punctuation.definition.attributes.end.scholarmark" } },
+          "patterns": [{ "include": "#attributes" }]
+        },
+        {
+          "match": "^(\\s*)(::)(label|bibliography|box|caption)(\\[)([^\\]\\r\\n]*)(\\])",
+          "captures": {
+            "2": { "name": "punctuation.definition.directive.scholarmark" },
+            "3": { "name": "support.function.directive.scholarmark" },
+            "4": { "name": "punctuation.definition.arguments.begin.scholarmark" },
+            "5": { "name": "entity.name.label.scholarmark" },
+            "6": { "name": "punctuation.definition.arguments.end.scholarmark" }
+          }
+        }
+      ]
+    },
+    "figure-directive": {
+      "begin": "^(\\s*)(:::)(figure)\\b(?:\\s*)(\\{)",
+      "beginCaptures": {
+        "2": { "name": "punctuation.definition.directive.scholarmark" },
+        "3": { "name": "support.function.directive.scholarmark" },
+        "4": { "name": "punctuation.definition.attributes.begin.scholarmark" }
+      },
+      "end": "(\\})",
+      "endCaptures": { "1": { "name": "punctuation.definition.attributes.end.scholarmark" } },
+      "patterns": [{ "include": "#attributes" }]
+    },
+    "attributes": {
+      "match": "([a-z][a-z-]*)(=)(?:\"([^\"]*)\"|([^\\s}]+))",
+      "captures": {
+        "1": { "name": "variable.other.attribute.scholarmark" },
+        "2": { "name": "keyword.operator.assignment.scholarmark" },
+        "3": { "name": "string.quoted.double.scholarmark" },
+        "4": { "name": "string.unquoted.scholarmark" }
+      }
+    }
+  }
+}

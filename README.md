@@ -1,0 +1,269 @@
+# Scholarmark
+
+Scholarmark is a scientific Markdown dialect with citations, semantic
+cross-references, numbered sections, bibliography placement, portable comment
+blocks, and bounded native figures.
+
+This repository contains the language [syntax specification](./SYNTAX.md), the
+[Kirjolab implementation contract](./SPECIFICATION.md), and a TypeScript
+reference implementation extracted from
+[bebraw/kirjolab](https://github.com/bebraw/kirjolab) at commit
+`3668de9e6285c90ef0c20f92ca4c4d3b62018588`.
+
+## Syntax at a glance
+
+Scholarmark keeps ordinary Markdown and GFM intact. You can continue using
+links, images, emphasis, lists, tables, task lists, footnotes, and fenced code
+blocks. The extensions add structure needed by scientific manuscripts.
+
+### Numbered sections
+
+Use the normal Markdown heading hierarchy, including a level-one heading for a
+document title when appropriate. Scholarmark numbers level-two and level-three
+headings automatically; level-four headings become unnumbered paragraph labels.
+
+```markdown
+# Study title
+
+## Methods
+
+### Participants
+
+#### Exclusion criteria
+```
+
+### Labels and references
+
+Use the same label syntax for every reference target. A label applies to the
+next Markdown block, whether that block is a heading, table, figure, or
+paragraph:
+
+```markdown
+::label[sec:analysis]
+
+## Statistical analysis
+
+See :ref[sec:analysis].
+See :ref[sec:analysis]{text="the analysis section"}.
+```
+
+The label id is also the rendered fragment. A reference to a labelled heading
+uses its numbered title by default. For other blocks, provide readable link
+text when needed:
+
+```markdown
+::label[table:measurements]
+
+| Sample | Value |
+| ------ | ----: |
+| A      |    42 |
+
+The measurements appear in
+:ref[table:measurements]{text="the measurements table"}.
+```
+
+### Citations
+
+Citation ids match entries in the accompanying BibTeX bibliography.
+
+```markdown
+The default is parenthetical :cite[merton1942].
+
+As :citet[merton1942] explains, textual citations fit into a sentence.
+
+Several sources can be grouped :citep[merton1942, doe2026].
+
+:cite[merton1942]{mode=full}
+:cite[merton1942]{locator="p. 42"}
+:cite[merton1942]{prefix="See " suffix=" for details"}
+```
+
+The supported modes are `parenthetical`, `textual`, and `full`. `:citep` is a
+shortcut for a parenthetical citation and `:citet` is a shortcut for a textual
+citation. Citation.js parses BibTeX into CSL-JSON. The built-in text formatter
+supports APA-like, Chicago author-date-like, and IEEE-like preview output.
+
+Place the generated list of cited references exactly where it belongs:
+
+```markdown
+## References
+
+::bibliography[]
+```
+
+### Portable comments
+
+Comment blocks remain in the manuscript source but are omitted from rendered
+output and validation. This is useful for notes between collaborators.
+
+```markdown
+::: comment
+Verify this interpretation before submission.
+:::
+```
+
+### Native boxplots
+
+Version 1 figures describe a bounded horizontal boxplot directly in Markdown.
+The renderer validates the five-number summaries and produces deterministic,
+sanitized SVG.
+
+```markdown
+::label[fig:latency]
+:::figure{kind="boxplot" version=1 x-label="Time (ms)" y-label="Method"}
+::box[Baseline]{min=12 q1=15 median=18 q3=21 max=27}
+::box[Proposed]{min=8 q1=10 median=11 q3=14 max=17}
+::caption[Latency measured across five runs.]
+:::
+```
+
+See [SYNTAX.md](./SYNTAX.md) for the core language and
+[NATIVE_FIGURES.md](./NATIVE_FIGURES.md) for the complete figure contract.
+
+## Install and verify
+
+```sh
+npm install
+npm test
+npm run build
+```
+
+## Render a document
+
+```ts
+import { render } from "scholarmark";
+
+const markdown = `## Results
+
+The result follows earlier work :cite[merton1942].
+
+## References
+
+::bibliography[]`;
+
+const bibliography = `@article{merton1942,
+  author = {Merton, Robert K.},
+  title = {The Normative Structure of Science},
+  year = {1942}
+}`;
+
+const rendered = await render(markdown, bibliography);
+
+console.log(rendered.html);
+console.log(rendered.diagnostics);
+```
+
+`render()` uses unified's asynchronous processing path. Citation formatter
+methods may return strings or promises, allowing host-controlled remote data
+resolution. Use `renderSync()` when every configured formatter and transform is
+synchronous:
+
+```ts
+import { renderSync } from "scholarmark";
+
+const rendered = renderSync(markdown, bibliography);
+```
+
+Neither function fetches remote resources implicitly. Resolve external data in
+the host application and pass the resulting Markdown and bibliography to the
+renderer.
+
+Both renderers accept an optional citation style (`apa`,
+`chicago-author-date`, or `ieee`) and optional heading numbers. The exported
+BibTeX, comment, and native-figure helpers are available for integrations that
+need the individual language stages.
+
+### Use a CSL formatter
+
+Scholarmark deliberately does not bundle a CSL processor or style files. A host
+application can add Citation.js's CSL plugin itself:
+
+```sh
+npm install @citation-js/core @citation-js/plugin-csl
+```
+
+Each formatter entry exposes the CSL-JSON produced by Citation.js as
+`entry.data`. This complete APA adapter uses Citation.js for both inline
+citations and bibliography entries:
+
+```js
+import { Cite } from "@citation-js/core";
+import "@citation-js/plugin-csl";
+import { render } from "scholarmark";
+
+const cslOptions = {
+  format: "text",
+  template: "apa",
+  lang: "en-US",
+};
+
+const withoutParentheses = (value) =>
+  value.startsWith("(") && value.endsWith(")") ? value.slice(1, -1) : value;
+
+const citationFormatter = {
+  formatCitation(entry, { mode }) {
+    const cite = new Cite([entry.data]);
+    if (mode === "full") {
+      return cite.format("bibliography", cslOptions).trim();
+    }
+    if (mode === "textual") {
+      const author = cite.format("citation", {
+        ...cslOptions,
+        entry: [{ id: entry.id, "author-only": true }],
+      });
+      const date = cite.format("citation", {
+        ...cslOptions,
+        entry: [{ id: entry.id, "suppress-author": true }],
+      });
+      return `${author} ${date}`;
+    }
+    return withoutParentheses(cite.format("citation", cslOptions));
+  },
+  formatBibliography(entry) {
+    return new Cite([entry.data]).format("bibliography", cslOptions).trim();
+  },
+};
+
+const rendered = await render(markdown, bibliography, "apa", {
+  citationFormatter,
+});
+```
+
+Change `template` and `lang` to select another installed or registered CSL style
+and locale. Formatter output is treated as text and still appears inside
+Scholarmark's sanitized, interactive citation markup.
+
+## VS Code extension
+
+The included extension adds Scholarmark support to ordinary Markdown files:
+
+- Theme-aware highlighting and folding for `::: comment` blocks
+- Highlighting for citations, references, labels, bibliography markers, and figures
+- Live diagnostics, completion, hover information, and document symbols
+- Go to definition for labels and BibTeX keys
+- Find references and rename for labels
+- Authoring snippets under the `sm-` prefix
+
+Build and install it locally:
+
+```sh
+npm run package:vscode
+code --install-extension editors/vscode/scholarmark-vscode-0.1.0.vsix
+```
+
+The language server reads `bibliography.bib` from the workspace root by
+default. Set `scholarmark.bibliographyFile` to another workspace-relative path
+when needed. It only reports Scholarmark diagnostics in Markdown files that use
+at least one recognized Scholarmark construct.
+
+## Origins
+
+The syntax document was originally maintained in
+[`survivejs/learnscientificwriting`](https://github.com/survivejs/learnscientificwriting)
+and is copied here from commit
+`3f2dc6783924e88cacdd5bdd875dc37612d94015`, the source named by Kirjolab's
+contract.
+
+## License
+
+Scholarmark is available under the [MIT License](./LICENSE).

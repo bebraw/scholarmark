@@ -1,0 +1,72 @@
+{
+  "name": "scholarmark-vscode",
+  "displayName": "Scholarmark",
+  "description": "Syntax highlighting and language intelligence for Scholarmark documents",
+  "version": "0.1.0",
+  "publisher": "bebraw",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters",
+    "Snippets"
+  ],
+  "keywords": [
+    "markdown",
+    "scientific writing",
+    "citations",
+    "bibtex"
+  ],
+  "main": "./dist/client.cjs",
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "grammars": [
+      {
+        "scopeName": "scholarmark.markdown.injection",
+        "path": "./syntaxes/scholarmark.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "markdown",
+        "path": "./snippets/scholarmark.json"
+      }
+    ],
+    "configuration": {
+      "title": "Scholarmark",
+      "properties": {
+        "scholarmark.bibliographyFile": {
+          "type": "string",
+          "default": "bibliography.bib",
+          "description": "Workspace-relative BibTeX file used for citation completion, navigation, and diagnostics."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "files": [
+    "dist",
+    "syntaxes",
+    "snippets",
+    "README.md",
+    "LICENSE"
+  ]
+}

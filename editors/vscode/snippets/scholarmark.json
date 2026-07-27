@@ -1,0 +1,39 @@
+{
+  "Scholarmark citation": {
+    "prefix": "sm-cite",
+    "body": [":cite[${1:citation-key}]${0}"],
+    "description": "Insert a Scholarmark citation"
+  },
+  "Scholarmark textual citation": {
+    "prefix": "sm-citet",
+    "body": [":citet[${1:citation-key}]${0}"],
+    "description": "Insert a textual Scholarmark citation"
+  },
+  "Scholarmark label and reference": {
+    "prefix": "sm-label",
+    "body": ["::label[${1:sec:id}]", "", "${0}"],
+    "description": "Declare a Scholarmark label"
+  },
+  "Scholarmark comment": {
+    "prefix": "sm-comment",
+    "body": ["::: comment", "${1:Comment}", ":::", "${0}"],
+    "description": "Insert a portable Scholarmark comment block"
+  },
+  "Scholarmark bibliography": {
+    "prefix": "sm-bibliography",
+    "body": ["::bibliography[]"],
+    "description": "Place the cited bibliography"
+  },
+  "Scholarmark boxplot": {
+    "prefix": "sm-boxplot",
+    "body": [
+      "::label[${1:fig:id}]",
+      ":::figure{kind=\"boxplot\" version=1 x-label=\"${2:X label}\" y-label=\"${3:Y label}\"}",
+      "::box[${4:Series}]{min=${5:0} q1=${6:1} median=${7:2} q3=${8:3} max=${9:4}}",
+      "::caption[${10:Caption}]",
+      ":::",
+      "${0}"
+    ],
+    "description": "Insert a native Scholarmark boxplot"
+  }
+}
