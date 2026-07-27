@@ -57,6 +57,11 @@ second Markdown dialect.
 - Level-four headings render as unnumbered paragraph labels.
 - `::label[id]` labels the next Markdown block and creates its reference target.
 - `:ref[id]` resolves labels and accepts optional custom `text`.
+- Hosts may provide publication-wide reference targets when rendering or
+  diagnosing separately stored documents. Host targets take precedence over
+  same-named local labels and retain the authored label as inert rendered data.
+- Render results expose local labels with their final title, default fragment,
+  and normalized declaration range for publication indexing.
 - `:cite` accepts multiple ids, `parenthetical`, `textual`, and `full` modes,
   plus `locator`, `prefix`, and `suffix`. The familiar `:citet` and `:citep`
   shortcuts default to textual and parenthetical modes respectively; an explicit
@@ -171,6 +176,13 @@ second Markdown dialect.
 - Given: `::label[sec:legacy]` immediately precedes a heading
 - When: the researcher uses `:ref[sec:legacy]`
 - Then: the link resolves to that exact fragment and uses the heading title
+
+**Scenario: Reference crosses a document boundary**
+
+- Given: a host-provided target maps a semantic label to another page
+- When: a separately rendered chapter uses `:ref` with that label
+- Then: rendering and diagnostics resolve the host URL and title without
+  weakening local label or directive validation
 
 **Scenario: Researcher places the bibliography**
 

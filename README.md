@@ -183,6 +183,51 @@ Each heading also includes `from` and `to`, its offsets in the normalized
 Markdown source. Duplicate titles receive the same unique suffixes used by the
 rendered HTML.
 
+### Resolve references across documents
+
+Pass publication-wide targets through `referenceTargets` when separately
+rendered documents refer to one another:
+
+```ts
+const referenceTargets = new Map([
+  [
+    "ch:technology",
+    {
+      title: "11. Technology",
+      href: "/book/technology/",
+    },
+  ],
+  [
+    "sec:citing-in-latex",
+    {
+      title: "A.5 Cite in LaTeX",
+      href: "/book/latex/#cite-in-latex",
+    },
+  ],
+]);
+
+const rendered = await render(markdown, bibliography, "apa", {
+  referenceTargets,
+});
+```
+
+A host target takes precedence over a same-named local `::label`. Its complete
+`href` is used unchanged unless the sanitizer rejects its URL protocol. Custom
+`:ref[id]{text="..."}` text still takes precedence over the target title. Each
+rendered link retains the authored id in `data-reference`.
+
+`rendered.references` describes the labels declared by the current document.
+Each entry contains the label, default local fragment, final display title, and
+the normalized source range of its `::label` declaration. Heading targets use
+the final heading number, including a `headingNumbers` override. This lets a
+host build a publication index before a final render with `referenceTargets`.
+
+The standalone validator accepts the same context:
+
+```ts
+const diagnostics = diagnose(markdown, bibliography, { referenceTargets });
+```
+
 ### Extend the sanitized tree
 
 Use `renderTree()` or `renderTreeSync()` when a host application needs to add
