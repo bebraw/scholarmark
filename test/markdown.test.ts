@@ -265,7 +265,48 @@ unfinished`;
     expect(html).toContain('<h3 id="three"><span class="section-number">0.1 </span>Three</h3>');
     expect(html).toContain("<p>line one\nline two</p>");
     expect(html).toContain("<b>Four</b>");
-    expect(render("", "")).toEqual({ html: "", diagnostics: [] });
+    expect(render("", "")).toEqual({ html: "", diagnostics: [], headings: [] });
+  });
+
+  it("returns final numbered heading metadata without ID collisions", () => {
+    const source = `## A
+
+### *Detail* \`code\` &amp;
+
+## A-2
+
+::: comment
+## Hidden
+:::
+
+## A
+
+#### Paragraph label`;
+    const detailFrom = source.indexOf("### *Detail*");
+    const lastFrom = source.lastIndexOf("## A");
+    const rendered = render(source, "", "apa", { headingNumbers: { [detailFrom]: "7.3" } });
+
+    expect(rendered.headings).toEqual([
+      { depth: 2, id: "a", title: "A", number: "1", from: 0, to: "## A".length },
+      {
+        depth: 3,
+        id: "detail-code",
+        title: "Detail code &",
+        number: "7.3",
+        from: detailFrom,
+        to: detailFrom + "### *Detail* `code` &amp;".length,
+      },
+      {
+        depth: 2,
+        id: "a-2",
+        title: "A-2",
+        number: "2",
+        from: source.indexOf("## A-2"),
+        to: source.indexOf("## A-2") + "## A-2".length,
+      },
+      { depth: 2, id: "a-3", title: "A", number: "3", from: lastFrom, to: lastFrom + "## A".length },
+    ]);
+    expect(withoutSourcePositions(rendered.html)).toContain('<h2 id="a-3"');
   });
 
   it("derives composed heading numbers and applies source-positioned overrides", () => {
@@ -567,6 +608,7 @@ Footnote.[^a]
     expect(rendered).toEqual({
       html: "",
       diagnostics: [{ severity: "error", message: "Comment block is not closed", from: 0, to: source.length }],
+      headings: [],
     });
   });
 

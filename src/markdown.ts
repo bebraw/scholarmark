@@ -50,6 +50,16 @@ interface Citation {
 export interface RenderedDocument {
   html: string;
   diagnostics: Diagnostic[];
+  headings: RenderedHeading[];
+}
+
+export interface RenderedHeading {
+  depth: 2 | 3;
+  id: string;
+  title: string;
+  number: string;
+  from: number;
+  to: number;
 }
 
 export type HeadingNumbers = Readonly<Record<number, string>>;
@@ -166,9 +176,10 @@ export async function render(
   options: MarkdownRenderOptions = {},
 ): Promise<RenderedDocument> {
   const prepared = prepareRender(source, bibliographySource);
+  const headings: RenderedHeading[] = [];
   try {
-    const result = await markdownProcessor(prepared, citationStyle, options).process(prepared.normalized);
-    return completeRender(prepared, String(result));
+    const result = await markdownProcessor(prepared, citationStyle, options, headings).process(prepared.normalized);
+    return completeRender(prepared, String(result), headings);
   } catch (error) {
     return failedRender(prepared, error);
   }
@@ -182,9 +193,10 @@ export function renderSync(
   options: SyncMarkdownRenderOptions = {},
 ): RenderedDocument {
   const prepared = prepareRender(source, bibliographySource);
+  const headings: RenderedHeading[] = [];
   try {
-    const result = markdownProcessor(prepared, citationStyle, options).processSync(prepared.normalized);
-    return completeRender(prepared, String(result));
+    const result = markdownProcessor(prepared, citationStyle, options, headings).processSync(prepared.normalized);
+    return completeRender(prepared, String(result), headings);
   } catch (error) {
     return failedRender(prepared, error);
   }
@@ -221,7 +233,12 @@ function prepareRender(source: string, bibliographySource: string): PreparedRend
   return { normalized, bibliography, citedIds, references, diagnostics };
 }
 
-function markdownProcessor(prepared: PreparedRender, citationStyle: CitationStyle, options: MarkdownRenderOptions) {
+function markdownProcessor(
+  prepared: PreparedRender,
+  citationStyle: CitationStyle,
+  options: MarkdownRenderOptions,
+  headings: RenderedHeading[],
+) {
   return unified()
     .use(remarkParse)
     .use(remarkGfm)
@@ -239,14 +256,14 @@ function markdownProcessor(prepared: PreparedRender, citationStyle: CitationStyl
     })
     .use(remarkRehype)
     .use(annotatePreviewSourcePositions)
-    .use(renderNumberedHeadings, options.headingNumbers)
+    .use(renderNumberedHeadings, { headingNumbers: options.headingNumbers, headings })
     .use(normalizeTableAlignment)
     .use(rehypeSanitize, previewSchema)
     .use(rehypeStringify);
 }
 
-function completeRender(prepared: PreparedRender, html: string): RenderedDocument {
-  return { html, diagnostics: prepared.diagnostics.sort((left, right) => left.from - right.from) };
+function completeRender(prepared: PreparedRender, html: string, headings: RenderedHeading[]): RenderedDocument {
+  return { html, diagnostics: prepared.diagnostics.sort((left, right) => left.from - right.from), headings };
 }
 
 function failedRender(prepared: PreparedRender, error: unknown): RenderedDocument {
@@ -261,6 +278,7 @@ function failedRender(prepared: PreparedRender, error: unknown): RenderedDocumen
         to: prepared.normalized.length,
       },
     ],
+    headings: [],
   };
 }
 
@@ -528,29 +546,39 @@ function validateNativeFigureSyntax(source: string): Diagnostic[] {
   return diagnostics;
 }
 
-function renderNumberedHeadings(headingNumbers: HeadingNumbers = {}) {
+interface NumberedHeadingOptions {
+  headingNumbers?: HeadingNumbers;
+  headings: RenderedHeading[];
+}
+
+function renderNumberedHeadings({ headingNumbers = {}, headings }: NumberedHeadingOptions) {
   return (tree: HastRoot): void => {
     const counters = { h2: 0, h3: 0 };
-    const foundIds: Record<string, number> = {};
+    const foundIds = new Set<string>();
     visit(tree, "element", (node: HastElement, index, parent) => {
       if (node.tagName !== "h2" && node.tagName !== "h3" && node.tagName !== "h4") return;
       if (node.tagName === "h4") {
         if (index !== undefined && parent) parent.children[index] = { ...node, tagName: "b", properties: {} };
         return;
       }
-      const raw = hastText(node);
+      const title = hastText(node).trim();
       const explicitId = typeof node.properties.id === "string" ? node.properties.id : undefined;
-      const slug = explicitId ?? getUniqueSlug(raw, foundIds);
+      const id = getUniqueId(explicitId ?? slugify(title), foundIds);
       const generatedNumber = getHeadingNumber(node.tagName, counters);
       const number =
         node.position?.start.offset === undefined ? generatedNumber : (headingNumbers[node.position.start.offset] ?? generatedNumber);
-      node.properties.id = slug;
+      node.properties.id = id;
       node.children.unshift({
         type: "element",
         tagName: "span",
         properties: { className: ["section-number"] },
         children: [{ type: "text", value: `${number} ` }],
       });
+      const from = node.position?.start.offset;
+      const to = node.position?.end.offset;
+      if (from !== undefined && to !== undefined) {
+        headings.push({ depth: node.tagName === "h2" ? 2 : 3, id, title, number, from, to });
+      }
     });
   };
 }
@@ -769,11 +797,16 @@ function getHeadingNumber(type: string, counters: { h2: number; h3: number }): s
   return `${counters.h2}.${counters.h3}`;
 }
 
-function getUniqueSlug(raw: string, foundIds: Record<string, number>): string {
-  const base = slugify(raw);
-  const count = foundIds[base] ?? 0;
-  foundIds[base] = count + 1;
-  return count === 0 ? base : `${base}-${count + 1}`;
+function getUniqueId(value: string, foundIds: Set<string>): string {
+  const base = value || "section";
+  let id = base;
+  let suffix = 2;
+  while (foundIds.has(id)) {
+    id = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  foundIds.add(id);
+  return id;
 }
 
 function splitIds(value: string): string[] {
