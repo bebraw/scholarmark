@@ -151,6 +151,7 @@ const rendered = await render(markdown, bibliography);
 
 console.log(rendered.html);
 console.log(rendered.diagnostics);
+console.log(rendered.headings);
 ```
 
 `render()` uses unified's asynchronous processing path. Citation formatter
@@ -167,6 +168,51 @@ const rendered = renderSync(markdown, bibliography);
 Neither function fetches remote resources implicitly. Resolve external data in
 the host application and pass the resulting Markdown and bibliography to the
 renderer.
+
+Each result includes metadata for the rendered level-two and level-three
+headings. The values are collected after numbering and ID allocation, so they
+can be used directly for navigation:
+
+```ts
+for (const heading of rendered.headings) {
+  console.log(heading.depth, heading.id, heading.title, heading.number);
+}
+```
+
+Each heading also includes `from` and `to`, its offsets in the normalized
+Markdown source. Duplicate titles receive the same unique suffixes used by the
+rendered HTML.
+
+### Extend the sanitized tree
+
+Use `renderTree()` or `renderTreeSync()` when a host application needs to add
+trusted behavior after Scholarmark parsing. The returned HAST has already passed
+through Scholarmark's sanitizer:
+
+```ts
+import { renderTree, toHtml } from "scholarmark";
+
+const rendered = await renderTree(markdown, bibliography);
+
+rendered.tree.children.push({
+  type: "element",
+  tagName: "aside",
+  properties: { className: ["interactive-demo"] },
+  children: [{ type: "text", value: "Trusted host content" }],
+});
+
+const html = toHtml(rendered.tree);
+```
+
+`renderTree()` supports asynchronous citation formatters, while
+`renderTreeSync()` requires every formatter and transform to be synchronous.
+Every call returns a fresh tree that the host may mutate independently.
+
+The sanitizer protects the tree at the point Scholarmark returns it. A host is
+responsible for nodes it adds afterward, and `toHtml()` deliberately serializes
+without sanitizing again. Keep untrusted authored HTML in the Markdown input so
+Scholarmark can escape it; only add content that the host has independently
+validated to the returned tree.
 
 Both renderers accept an optional citation style (`apa`,
 `chicago-author-date`, or `ieee`) and optional heading numbers. The exported
