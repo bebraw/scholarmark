@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { headingNumbersByOffset, parseBibliography, render as renderAsync, renderSync as render, slugify } from "../src/markdown";
+import {
+  headingNumbersByOffset,
+  parseBibliography,
+  render as renderAsync,
+  renderSync as render,
+  renderTree,
+  renderTreeSync,
+  slugify,
+  toHtml,
+} from "../src/markdown";
 
 const bibliography = `@article{merton1942,
   author = {Merton, Robert K.},
@@ -17,6 +26,47 @@ describe("render", () => {
     const source = "## Evidence\n\nSee :cite[merton1942].\n\n::bibliography[]";
 
     expect(await renderAsync(source, bibliography)).toEqual(render(source, bibliography));
+  });
+
+  it("returns equivalent sanitized trees on asynchronous and synchronous paths", async () => {
+    const source = "## Evidence\n\nSee :cite[merton1942].";
+
+    expect(await renderTree(source, bibliography)).toEqual(renderTreeSync(source, bibliography));
+    expect(toHtml(renderTreeSync(source, bibliography).tree)).toBe(render(source, bibliography).html);
+  });
+
+  it("lets a host extend a fresh sanitized tree with trusted nodes", () => {
+    const source = "## Safe\n\n<script>alert(1)</script>\n\n[unsafe](javascript:alert(1))";
+    const first = renderTreeSync(source, "");
+
+    expect(toHtml(first.tree)).not.toContain("<script>");
+    expect(toHtml(first.tree)).not.toContain('href="javascript:');
+    first.tree.children.push({
+      type: "element",
+      tagName: "aside",
+      properties: { className: ["trusted-demo"] },
+      children: [{ type: "text", value: "Added by the host" }],
+    });
+
+    expect(toHtml(first.tree)).toContain('<aside class="trusted-demo">Added by the host</aside>');
+    expect(toHtml(renderTreeSync(source, "").tree)).not.toContain("trusted-demo");
+  });
+
+  it("represents transform failures as safe trees", async () => {
+    const source = "See :cite[missing].\n\n<script>alert(1)</script>";
+    const citationFormatter = {
+      formatCitation: async () => {
+        throw new Error("remote citation failed");
+      },
+      formatBibliography: async () => "unused",
+    };
+    const rendered = await renderTree(source, "", "apa", { citationFormatter });
+    const html = toHtml(rendered.tree);
+
+    expect(rendered.headings).toEqual([]);
+    expect(rendered.diagnostics.at(-1)?.message).toBe("remote citation failed");
+    expect(html).toContain("See :cite[missing].");
+    expect(html).not.toContain("<script>");
   });
 
   it("awaits asynchronous citation formatters only on the asynchronous path", async () => {

@@ -53,6 +53,12 @@ export interface RenderedDocument {
   headings: RenderedHeading[];
 }
 
+export interface RenderedTreeDocument {
+  tree: HastRoot;
+  diagnostics: Diagnostic[];
+  headings: RenderedHeading[];
+}
+
 export interface RenderedHeading {
   depth: 2 | 3;
   id: string;
@@ -175,14 +181,8 @@ export async function render(
   citationStyle: CitationStyle = "apa",
   options: MarkdownRenderOptions = {},
 ): Promise<RenderedDocument> {
-  const prepared = prepareRender(source, bibliographySource);
-  const headings: RenderedHeading[] = [];
-  try {
-    const result = await markdownProcessor(prepared, citationStyle, options, headings).process(prepared.normalized);
-    return completeRender(prepared, String(result), headings);
-  } catch (error) {
-    return failedRender(prepared, error);
-  }
+  const rendered = await renderTree(source, bibliographySource, citationStyle, options);
+  return { html: toHtml(rendered.tree), diagnostics: rendered.diagnostics, headings: rendered.headings };
 }
 
 /** Render synchronously when every configured formatter and transform is synchronous. */
@@ -192,14 +192,49 @@ export function renderSync(
   citationStyle: CitationStyle = "apa",
   options: SyncMarkdownRenderOptions = {},
 ): RenderedDocument {
+  const rendered = renderTreeSync(source, bibliographySource, citationStyle, options);
+  return { html: toHtml(rendered.tree), diagnostics: rendered.diagnostics, headings: rendered.headings };
+}
+
+/** Return sanitized HAST for trusted host-side transformations. */
+export async function renderTree(
+  source: string,
+  bibliographySource: string,
+  citationStyle: CitationStyle = "apa",
+  options: MarkdownRenderOptions = {},
+): Promise<RenderedTreeDocument> {
   const prepared = prepareRender(source, bibliographySource);
   const headings: RenderedHeading[] = [];
   try {
-    const result = markdownProcessor(prepared, citationStyle, options, headings).processSync(prepared.normalized);
-    return completeRender(prepared, String(result), headings);
+    const processor = markdownProcessor(prepared, citationStyle, options, headings);
+    const tree = (await processor.run(processor.parse(prepared.normalized), prepared.normalized)) as HastRoot;
+    return completeTreeRender(prepared, tree, headings);
   } catch (error) {
-    return failedRender(prepared, error);
+    return failedTreeRender(prepared, error);
   }
+}
+
+/** Return sanitized HAST synchronously when every configured transform is synchronous. */
+export function renderTreeSync(
+  source: string,
+  bibliographySource: string,
+  citationStyle: CitationStyle = "apa",
+  options: SyncMarkdownRenderOptions = {},
+): RenderedTreeDocument {
+  const prepared = prepareRender(source, bibliographySource);
+  const headings: RenderedHeading[] = [];
+  try {
+    const processor = markdownProcessor(prepared, citationStyle, options, headings);
+    const tree = processor.runSync(processor.parse(prepared.normalized), prepared.normalized) as HastRoot;
+    return completeTreeRender(prepared, tree, headings);
+  } catch (error) {
+    return failedTreeRender(prepared, error);
+  }
+}
+
+/** Serialize a HAST tree, including trusted nodes added by a host after rendering. */
+export function toHtml(tree: HastRoot): string {
+  return String(unified().use(rehypeStringify).stringify(tree));
 }
 
 interface PreparedRender {
@@ -258,17 +293,33 @@ function markdownProcessor(
     .use(annotatePreviewSourcePositions)
     .use(renderNumberedHeadings, { headingNumbers: options.headingNumbers, headings })
     .use(normalizeTableAlignment)
-    .use(rehypeSanitize, previewSchema)
-    .use(rehypeStringify);
+    .use(rehypeSanitize, previewSchema);
 }
 
-function completeRender(prepared: PreparedRender, html: string, headings: RenderedHeading[]): RenderedDocument {
-  return { html, diagnostics: prepared.diagnostics.sort((left, right) => left.from - right.from), headings };
+function completeTreeRender(prepared: PreparedRender, tree: HastRoot, headings: RenderedHeading[]): RenderedTreeDocument {
+  return { tree, diagnostics: prepared.diagnostics.sort((left, right) => left.from - right.from), headings };
 }
 
-function failedRender(prepared: PreparedRender, error: unknown): RenderedDocument {
+function failedTreeRender(prepared: PreparedRender, error: unknown): RenderedTreeDocument {
   return {
-    html: `<pre><code>${escapeHtml(prepared.normalized)}</code></pre>`,
+    tree: {
+      type: "root",
+      children: [
+        {
+          type: "element",
+          tagName: "pre",
+          properties: {},
+          children: [
+            {
+              type: "element",
+              tagName: "code",
+              properties: {},
+              children: [{ type: "text", value: prepared.normalized }],
+            },
+          ],
+        },
+      ],
+    },
     diagnostics: [
       ...prepared.diagnostics,
       {
@@ -833,10 +884,6 @@ function attributeValue(value: string | null | undefined): string | undefined {
 function toDiagnostic(message: string, match: RegExpMatchArray): Diagnostic {
   const from = match.index ?? 0;
   return { severity: "error", message, from, to: from + match[0].length };
-}
-
-function escapeHtml(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 
 // Stryker restore Regex
