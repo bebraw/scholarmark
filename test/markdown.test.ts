@@ -354,7 +354,7 @@ unfinished`;
     expect(html).toContain('<h3 id="three"><span class="section-number">0.1 </span>Three</h3>');
     expect(html).toContain("<p>line one\nline two</p>");
     expect(html).toContain("<b>Four</b>");
-    expect(render("", "")).toEqual({ html: "", diagnostics: [], headings: [] });
+    expect(render("", "")).toEqual({ html: "", diagnostics: [], headings: [], references: [] });
   });
 
   it("returns final numbered heading metadata without ID collisions", () => {
@@ -396,6 +396,52 @@ unfinished`;
       { depth: 2, id: "a-3", title: "A", number: "3", from: lastFrom, to: lastFrom + "## A".length },
     ]);
     expect(withoutSourcePositions(rendered.html)).toContain('<h2 id="a-3"');
+  });
+
+  it("returns local reference targets with final heading titles and declaration ranges", () => {
+    const source = `::label[sec:methods]
+
+## *Methods* &amp; materials
+
+::label[table:data]
+
+| Value |
+| ---: |
+| 42 |
+
+::label[paragraph:note]
+
+An ordinary block.`;
+    const headingFrom = source.indexOf("## *Methods*");
+    const rendered = render(source, "", "apa", { headingNumbers: { [headingFrom]: "3.2" } });
+    const range = (declaration: string) => ({
+      from: source.indexOf(declaration),
+      to: source.indexOf(declaration) + declaration.length,
+    });
+
+    expect(rendered.references).toEqual([
+      {
+        label: "sec:methods",
+        title: "3.2 Methods & materials",
+        fragment: "sec:methods",
+        ...range("::label[sec:methods]"),
+      },
+      {
+        label: "table:data",
+        title: "table:data",
+        fragment: "table:data",
+        ...range("::label[table:data]"),
+      },
+      {
+        label: "paragraph:note",
+        title: "paragraph:note",
+        fragment: "paragraph:note",
+        ...range("::label[paragraph:note]"),
+      },
+    ]);
+    expect(withoutSourcePositions(rendered.html)).toContain(
+      '<h2 id="methods-materials"><span class="section-number">3.2 </span><em>Methods</em> &#x26; materials</h2>',
+    );
   });
 
   it("derives composed heading numbers and applies source-positioned overrides", () => {
@@ -698,6 +744,7 @@ Footnote.[^a]
       html: "",
       diagnostics: [{ severity: "error", message: "Comment block is not closed", from: 0, to: source.length }],
       headings: [],
+      references: [],
     });
   });
 

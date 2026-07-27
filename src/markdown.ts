@@ -51,12 +51,14 @@ export interface RenderedDocument {
   html: string;
   diagnostics: Diagnostic[];
   headings: RenderedHeading[];
+  references: RenderedReferenceTarget[];
 }
 
 export interface RenderedTreeDocument {
   tree: HastRoot;
   diagnostics: Diagnostic[];
   headings: RenderedHeading[];
+  references: RenderedReferenceTarget[];
 }
 
 export interface RenderedHeading {
@@ -66,6 +68,14 @@ export interface RenderedHeading {
   number: string;
   from: number;
   to: number;
+}
+
+export interface RenderedReferenceTarget {
+  readonly label: string;
+  readonly title: string;
+  readonly fragment: string;
+  readonly from: number;
+  readonly to: number;
 }
 
 export type HeadingNumbers = Readonly<Record<number, string>>;
@@ -104,7 +114,6 @@ export function diagnose(source: string, bibliographySource = "", options: Diagn
 // Stryker disable Regex: unified owns Markdown parsing; these expressions only locate the small semantic-directive validation surface.
 const directivePattern = /(?<!:):([a-z][a-z-]*)\[([^\]]*)\](?:\{([^}]*)\})?/giu;
 const attributePattern = /([a-z][a-z-]*)=(?:"([^"]*)"|([^\s}]+))/giu;
-const headingPattern = /^(#{1,6})\s+(.+?)\s*$/gmu;
 const labelPattern = /^::label\[([^\]\r\n]*)\][ \t]*$/gmu;
 const safeTableAlignmentPattern = /^text-align: (?:center|left|right)$/u;
 
@@ -205,7 +214,12 @@ export async function render(
   options: MarkdownRenderOptions = {},
 ): Promise<RenderedDocument> {
   const rendered = await renderTree(source, bibliographySource, citationStyle, options);
-  return { html: toHtml(rendered.tree), diagnostics: rendered.diagnostics, headings: rendered.headings };
+  return {
+    html: toHtml(rendered.tree),
+    diagnostics: rendered.diagnostics,
+    headings: rendered.headings,
+    references: rendered.references,
+  };
 }
 
 /** Render synchronously when every configured formatter and transform is synchronous. */
@@ -216,7 +230,12 @@ export function renderSync(
   options: SyncMarkdownRenderOptions = {},
 ): RenderedDocument {
   const rendered = renderTreeSync(source, bibliographySource, citationStyle, options);
-  return { html: toHtml(rendered.tree), diagnostics: rendered.diagnostics, headings: rendered.headings };
+  return {
+    html: toHtml(rendered.tree),
+    diagnostics: rendered.diagnostics,
+    headings: rendered.headings,
+    references: rendered.references,
+  };
 }
 
 /** Return sanitized HAST for trusted host-side transformations. */
@@ -226,7 +245,7 @@ export async function renderTree(
   citationStyle: CitationStyle = "apa",
   options: MarkdownRenderOptions = {},
 ): Promise<RenderedTreeDocument> {
-  const prepared = prepareRender(source, bibliographySource, options.referenceTargets);
+  const prepared = prepareRender(source, bibliographySource, options.referenceTargets, options.headingNumbers);
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
@@ -244,7 +263,7 @@ export function renderTreeSync(
   citationStyle: CitationStyle = "apa",
   options: SyncMarkdownRenderOptions = {},
 ): RenderedTreeDocument {
-  const prepared = prepareRender(source, bibliographySource, options.referenceTargets);
+  const prepared = prepareRender(source, bibliographySource, options.referenceTargets, options.headingNumbers);
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
@@ -265,20 +284,30 @@ interface PreparedRender {
   readonly bibliography: Map<string, BibliographyEntry>;
   readonly citedIds: ReadonlySet<string>;
   readonly references: Map<string, ReferenceEntry>;
+  readonly localReferences: LocalReferenceEntry[];
   readonly diagnostics: Diagnostic[];
+}
+
+interface LocalReferenceEntry extends ReferenceEntry {
+  readonly label: string;
+  readonly fragment: string;
+  readonly from: number;
+  readonly to: number;
+  readonly attachedFrom: number;
 }
 
 function prepareRender(
   source: string,
   bibliographySource: string,
   referenceTargets: ReadonlyMap<string, ReferenceTarget> = new Map(),
+  headingNumbers: HeadingNumbers = {},
 ): PreparedRender {
   const normalized = source.replaceAll("\r\n", "\n");
   const comments = projectMarkdownComments(normalized);
   const semanticSource = projectMarkdownSemantics(normalized);
   const bibliography = parseBibliography(bibliographySource);
   const citedIds = collectCitationIds(semanticSource);
-  const references = collectReferences(semanticSource);
+  const { references, localReferences } = collectReferences(semanticSource, headingNumbers);
   for (const [label, target] of referenceTargets) references.set(label, target);
   const diagnostics = [
     ...(comments.unclosedFrom === null
@@ -293,7 +322,7 @@ function prepareRender(
         ]),
     ...validateSyntax(semanticSource, bibliography, references),
   ];
-  return { normalized, bibliography, citedIds, references, diagnostics };
+  return { normalized, bibliography, citedIds, references, localReferences, diagnostics };
 }
 
 function markdownProcessor(
@@ -325,7 +354,12 @@ function markdownProcessor(
 }
 
 function completeTreeRender(prepared: PreparedRender, tree: HastRoot, headings: RenderedHeading[]): RenderedTreeDocument {
-  return { tree, diagnostics: prepared.diagnostics.sort((left, right) => left.from - right.from), headings };
+  return {
+    tree,
+    diagnostics: prepared.diagnostics.sort((left, right) => left.from - right.from),
+    headings,
+    references: renderedReferenceTargets(prepared.localReferences, headings),
+  };
 }
 
 function failedTreeRender(prepared: PreparedRender, error: unknown): RenderedTreeDocument {
@@ -358,6 +392,7 @@ function failedTreeRender(prepared: PreparedRender, error: unknown): RenderedTre
       },
     ],
     headings: [],
+    references: [],
   };
 }
 
@@ -762,26 +797,60 @@ function hastText(node: HastRoot | HastRootContent): string {
   return "children" in node ? node.children.map((child) => hastText(child)).join("") : "";
 }
 
-function collectReferences(source: string): Map<string, ReferenceEntry> {
+function collectReferences(
+  source: string,
+  headingNumbers: HeadingNumbers,
+): { references: Map<string, ReferenceEntry>; localReferences: LocalReferenceEntry[] } {
   const references = new Map<string, ReferenceEntry>();
-  const headings = [...source.matchAll(headingPattern)];
+  const localReferences: LocalReferenceEntry[] = [];
   const counters = { h2: 0, h3: 0 };
   const headingsByOffset = new Map<number, string>();
-  for (const heading of headings) {
-    const level = `h${heading[1]?.length ?? 2}`;
-    const raw = heading[2] ?? "";
-    const number = level === "h2" || level === "h3" ? getHeadingNumber(level, counters) : "";
-    const title = [number, raw].filter(Boolean).join(" ");
-    if (heading.index !== undefined) headingsByOffset.set(heading.index, title);
-  }
+  const tree = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter, ["yaml", "toml"]).use(remarkDirective).parse(source);
+  visit(tree, "heading", (heading: Heading) => {
+    const offset = heading.position?.start.offset;
+    if (offset === undefined) return;
+    const level = `h${heading.depth}`;
+    const generatedNumber = level === "h2" || level === "h3" ? getHeadingNumber(level, counters) : "";
+    const number = headingNumbers[offset] ?? generatedNumber;
+    headingsByOffset.set(offset, [number, mdastText(heading).trim()].filter(Boolean).join(" "));
+  });
   for (const label of source.matchAll(labelPattern)) {
     const target = label[1]?.trim() ?? "";
-    const nextBlock = nextNonBlankLine(source, (label.index ?? 0) + label[0].length);
+    const from = label.index ?? 0;
+    const to = from + label[0].length;
+    const nextBlock = nextNonBlankLine(source, to);
     if (target && nextBlock && !/^::label\[/iu.test(nextBlock.value) && !references.has(target)) {
-      references.set(target, { title: headingsByOffset.get(nextBlock.offset) ?? target, href: `#${target}` });
+      const reference = {
+        label: target,
+        title: headingsByOffset.get(nextBlock.offset) ?? target,
+        href: `#${target}`,
+        fragment: target,
+        from,
+        to,
+        attachedFrom: nextBlock.offset,
+      } satisfies LocalReferenceEntry;
+      references.set(target, reference);
+      localReferences.push(reference);
     }
   }
-  return references;
+  return { references, localReferences };
+}
+
+function renderedReferenceTargets(
+  localReferences: readonly LocalReferenceEntry[],
+  headings: readonly RenderedHeading[],
+): RenderedReferenceTarget[] {
+  const headingsByOffset = new Map(headings.map((heading) => [heading.from, heading]));
+  return localReferences.map((reference) => {
+    const heading = headingsByOffset.get(reference.attachedFrom);
+    return {
+      label: reference.label,
+      title: heading ? `${heading.number} ${heading.title}` : reference.title,
+      fragment: reference.fragment,
+      from: reference.from,
+      to: reference.to,
+    };
+  });
 }
 
 function nextNonBlankLine(source: string, from: number): { offset: number; value: string } | null {
