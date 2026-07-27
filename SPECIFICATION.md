@@ -55,7 +55,8 @@ second Markdown dialect.
   block diagnoses and keeps the remaining source out of the preview.
 - Level-two and level-three headings receive generated section numbers.
 - Level-four headings render as unnumbered paragraph labels.
-- `::label[id]` labels the next Markdown block and creates its reference target.
+- `::label[id]` follows the Markdown block it labels and creates its reference
+  target.
 - `:ref[id]` resolves labels and accepts optional custom `text`.
 - Hosts may provide publication-wide reference targets when rendering or
   diagnosing separately stored documents. Host targets take precedence over
@@ -173,7 +174,7 @@ second Markdown dialect.
 
 **Scenario: Reference uses a LaTeX-style label**
 
-- Given: `::label[sec:legacy]` immediately precedes a heading
+- Given: `::label[sec:legacy]` immediately follows a heading
 - When: the researcher uses `:ref[sec:legacy]`
 - Then: the link resolves to that exact fragment and uses the heading title
 

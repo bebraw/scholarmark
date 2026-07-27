@@ -34,14 +34,13 @@ headings automatically; level-four headings become unnumbered paragraph labels.
 
 ### Labels and references
 
-Use the same label syntax for every reference target. A label applies to the
-next Markdown block, whether that block is a heading, table, figure, or
-paragraph:
+Use the same label syntax for every reference target. Like a LaTeX `\label`, it
+follows the Markdown block it identifies, whether that block is a heading,
+table, figure, or paragraph:
 
 ```markdown
-::label[sec:analysis]
-
 ## Statistical analysis
+::label[sec:analysis]
 
 See :ref[sec:analysis].
 See :ref[sec:analysis]{text="the analysis section"}.
@@ -52,11 +51,10 @@ uses its numbered title by default. For other blocks, provide readable link
 text when needed:
 
 ```markdown
-::label[table:measurements]
-
 | Sample | Value |
 | ------ | ----: |
 | A      |    42 |
+::label[table:measurements]
 
 The measurements appear in
 :ref[table:measurements]{text="the measurements table"}.
@@ -109,12 +107,12 @@ The renderer validates the five-number summaries and produces deterministic,
 sanitized SVG.
 
 ```markdown
-::label[fig:latency]
 :::figure{kind="boxplot" version=1 x-label="Time (ms)" y-label="Method"}
 ::box[Baseline]{min=12 q1=15 median=18 q3=21 max=27}
 ::box[Proposed]{min=8 q1=10 median=11 q3=14 max=17}
 ::caption[Latency measured across five runs.]
 :::
+::label[fig:latency]
 ```
 
 See [SYNTAX.md](./SYNTAX.md) for the core language and

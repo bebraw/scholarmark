@@ -86,8 +86,13 @@ export function publicationReferenceLabels(markdown: string): ReadonlyMap<string
   for (const [index, line] of lines.entries()) {
     const id = declaration.exec(line)?.groups?.id;
     if (!id) continue;
-    const nextBlock = lines.slice(index + 1).find((candidate) => candidate.trim());
-    const headingTitle = nextBlock ? heading.exec(nextBlock)?.groups?.title : undefined;
+    let previousBlock: string | undefined;
+    for (let previousIndex = index - 1; previousIndex >= 0; previousIndex -= 1) {
+      if (!lines[previousIndex]?.trim()) continue;
+      previousBlock = lines[previousIndex];
+      break;
+    }
+    const headingTitle = previousBlock ? heading.exec(previousBlock)?.groups?.title : undefined;
     labels.set(id, headingTitle ? plainInlineText(headingTitle) : id);
   }
   return labels;

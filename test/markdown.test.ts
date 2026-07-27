@@ -86,9 +86,8 @@ describe("render", () => {
   });
 
   it("resolves host-provided references with host-first precedence on both render paths", async () => {
-    const source = `::label[ch:technology]
-
-## Local technology
+    const source = `## Local technology
+::label[ch:technology]
 
 See :ref[ch:technology] and :ref[sec:citing]{text="the LaTeX section"}.`;
     const referenceTargets = new Map([
@@ -124,12 +123,12 @@ See :ref[ch:technology] and :ref[sec:citing]{text="the LaTeX section"}.`;
   });
 
   it("renders an accessible deterministic native boxplot", () => {
-    const source = `::label[fig:fcp-summary]
-:::figure{kind="boxplot" version=1 x-label="Time (ms)" y-label="Variant"}
+    const source = `:::figure{kind="boxplot" version=1 x-label="Time (ms)" y-label="Variant"}
 ::box[SSR & FCP]{min=1613 q1=1627 median=1628 q3=1632 max=1641}
 ::box[Islands]{min=838 q1=838 median=838 q3=846 max=858}
 ::caption[First Contentful Paint across five benchmark runs.]
-:::`;
+:::
+::label[fig:fcp-summary]`;
 
     const rendered = render(source, "");
     const html = withoutSourcePositions(rendered.html);
@@ -224,15 +223,14 @@ See :ref[ch:technology] and :ref[sec:citing]{text="the LaTeX section"}.`;
     expect(text).not.toContain("Sadílková");
   });
   it("renders meaningful Markdown and extended scholarly directives", () => {
-    const source = `::label[sec-legacy]
-## Evidence
+    const source = `## Evidence
+::label[sec-legacy]
 
 Text with **weight**, *emphasis*, \`code\`, [source](https://example.com), :cite[merton1942]{mode=textual locator="p. 4"}, and :ref[sec-legacy]{text="Evidence"}.
 
-::label[table:one]
-
 - one
 - two
+::label[table:one]
 
 \`\`\`ts
 const answer = 42;
@@ -258,10 +256,10 @@ const answer = 42;
   });
 
   it("reports missing, duplicate, empty, and unsupported directives", () => {
-    const source = `::label[same]
-## One
+    const source = `## One
 ::label[same]
 ## Two
+::label[same]
 
 :cite[missing]{mode="unknown"} :cite[] :ref[absent] :ref[]
 `;
@@ -399,19 +397,16 @@ unfinished`;
   });
 
   it("returns local reference targets with final heading titles and declaration ranges", () => {
-    const source = `::label[sec:methods]
-
-## *Methods* &amp; materials
-
-::label[table:data]
+    const source = `## *Methods* &amp; materials
+::label[sec:methods]
 
 | Value |
 | ---: |
 | 42 |
+::label[table:data]
 
-::label[paragraph:note]
-
-An ordinary block.`;
+An ordinary block.
+::label[paragraph:note]`;
     const headingFrom = source.indexOf("## *Methods*");
     const rendered = render(source, "", "apa", { headingNumbers: { [headingFrom]: "3.2" } });
     const range = (declaration: string) => ({
@@ -547,14 +542,14 @@ content
       exact("Unsupported leaf directive: ::unknown", "::unknown[value]"),
       exact("Unsupported container directive: :::unknown", ":::unknown"),
       exact("Unsupported leaf directive: ::alias", '::alias[Missing]{target="sec:missing" slug="missing"}'),
-      exact("Unsupported leaf directive: ::anchor", '::anchor[Missing]{target="table:missing"}\n'),
+      exact("Unsupported leaf directive: ::anchor", '::anchor[Missing]{target="table:missing"}'),
       exact("Unsupported text directive: :unknown", ":unknown[value]", source.lastIndexOf(":unknown[value]")),
     ]);
     expect(withoutSourcePositions(rendered.html)).toContain("<h1>Chapter title</h1>");
   });
 
   it("uses one label syntax for a level-one title reference", () => {
-    const rendered = render("::label[study]\n\n# Study\n\nSee :ref[study].", "");
+    const rendered = render("# Study\n::label[study]\n\nSee :ref[study].", "");
 
     expect(rendered.diagnostics).toEqual([]);
     const html = withoutSourcePositions(rendered.html);
@@ -676,15 +671,15 @@ Footnote.[^a]
 }
 `;
     const rendered = render(
-      `::label[sec:legacy]
-## Repeated
+      `## Repeated
+::label[sec:legacy]
 
 ## Repeated
 
-::label[table:one]
 | Value |
 | ---: |
 | 42 |
+::label[table:one]
 
 :ref[sec:legacy] :ref[table:one]{text="custom table"}
 
@@ -706,29 +701,50 @@ Footnote.[^a]
   });
 
   it("diagnoses incomplete label declarations", () => {
-    const source = "::label[]\nParagraph";
+    const source = "Paragraph\n::label[]";
+    const from = source.indexOf("::label[]");
     expect(render(source, "").diagnostics).toEqual([
-      { severity: "error", message: "Label requires an id", from: 0, to: "::label[]".length },
+      { severity: "error", message: "Label requires an id", from, to: from + "::label[]".length },
     ]);
   });
 
   it("diagnoses invalid and unattached labels", () => {
-    const source = "::label[bad id]\nParagraph\n\n::label[orphan]";
+    const source = "Paragraph\n::label[bad id]\n\n::label[orphan]";
+    const invalidFrom = source.indexOf("::label[bad id]");
     const orphanFrom = source.indexOf("::label[orphan]");
 
     expect(render(source, "").diagnostics).toEqual([
-      { severity: "error", message: "Invalid label id: bad id", from: 0, to: "::label[bad id]".length },
       {
         severity: "error",
-        message: "Label must precede a block",
+        message: "Invalid label id: bad id",
+        from: invalidFrom,
+        to: invalidFrom + "::label[bad id]".length,
+      },
+      {
+        severity: "error",
+        message: "Label must follow a block",
         from: orphanFrom,
         to: orphanFrom + "::label[orphan]".length,
       },
     ]);
   });
 
+  it("rejects the former prefix label placement", () => {
+    const source = "::label[legacy]\n## Heading";
+
+    expect(render(source, "").diagnostics).toEqual([
+      {
+        severity: "error",
+        message: "Label must follow a block",
+        from: 0,
+        to: "::label[legacy]".length,
+      },
+    ]);
+    expect(render(source, "").references).toEqual([]);
+  });
+
   it("accepts trailing whitespace on a label", () => {
-    const rendered = render("::label[long-id]   \n\n## **Bold** tail", "");
+    const rendered = render("## **Bold** tail\n::label[long-id]   ", "");
     const html = withoutSourcePositions(rendered.html);
 
     expect(rendered.diagnostics).toEqual([]);
@@ -753,10 +769,10 @@ Footnote.[^a]
 ::bibliography[all-long]{scope=project-long}${"  "}
 prefix :::unknown-container
 :::unknown-container extra words
+Paragraph
 ::label[target-long]${"  "}
 Paragraph
-::label[target-long]  
-Paragraph`;
+::label[target-long]  `;
     const diagnostics = render(source, "").diagnostics;
 
     expect(diagnostics.map(({ message }) => message)).toEqual([
@@ -793,10 +809,10 @@ Paragraph`;
 
   it("renders a label on a non-heading block and rejects loose captions", () => {
     const source = `## Section
-::label[table:value]
 | Value |
 | ---: |
 | 42 |
+::label[table:value]
 
 :ref[table:value]{text="Custom label"}
 ::caption[Loose caption]`;

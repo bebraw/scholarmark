@@ -23,14 +23,14 @@ labels: they render as unnumbered bold labels.
 
 ## Labels and references
 
-Use `::label[id]` immediately before any block that other content needs to
-reference. The same syntax labels headings, tables, figures, and paragraphs.
+Use `::label[id]` immediately after any block that other content needs to
+reference, following the familiar LaTeX order. The same syntax labels headings,
+tables, figures, and paragraphs.
 The id becomes the public fragment and reference key.
 
 ```markdown
-::label[sec:citing-accuracy]
-
 ## Why citing matters
+::label[sec:citing-accuracy]
 
 See :ref[sec:citing-accuracy].
 See :ref[sec:citing-accuracy]{text="the earlier discussion"}.
@@ -40,11 +40,10 @@ Without custom text, a heading reference renders the numbered title of its
 target. Use `text` to override link text, particularly for non-heading targets:
 
 ```markdown
-::label[table:methods]
-
 | Method | Result |
 | --- | --- |
 | A | 42 |
+::label[table:methods]
 
 The results appear in :ref[table:methods]{text="the methods table"}.
 ```

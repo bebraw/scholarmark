@@ -28,7 +28,7 @@ compatibility.
 - Directives other than `box` and `caption`, nested containers, and authored SVG
   are not part of version 1.
 - A referenceable figure uses the ordinary `::label[id]` directive immediately
-  before its `:::figure` container.
+  after its `:::figure` container.
 
 ## Rendering Contract
 

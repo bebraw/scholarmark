@@ -11,7 +11,7 @@
   },
   "Scholarmark label and reference": {
     "prefix": "sm-label",
-    "body": ["::label[${1:sec:id}]", "", "${0}"],
+    "body": ["${1:## Section title}", "::label[${2:sec:id}]", "", "${0}"],
     "description": "Declare a Scholarmark label"
   },
   "Scholarmark comment": {
@@ -27,11 +27,11 @@
   "Scholarmark boxplot": {
     "prefix": "sm-boxplot",
     "body": [
-      "::label[${1:fig:id}]",
       ":::figure{kind=\"boxplot\" version=1 x-label=\"${2:X label}\" y-label=\"${3:Y label}\"}",
       "::box[${4:Series}]{min=${5:0} q1=${6:1} median=${7:2} q3=${8:3} max=${9:4}}",
       "::caption[${10:Caption}]",
       ":::",
+      "::label[${1:fig:id}]",
       "${0}"
     ],
     "description": "Insert a native Scholarmark boxplot"

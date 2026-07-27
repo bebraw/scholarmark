@@ -52,13 +52,13 @@ describe("scholarly publication projection", () => {
   });
 
   it("resolves heading, non-heading, custom, and fallback reference labels", () => {
-    const markdown = `::label[sec-results]
-## *Results*
+    const markdown = `## *Results*
+::label[sec-results]
 
-::label[table:one]
 | Value |
 | ---: |
-| 42 |`;
+| 42 |
+::label[table:one]`;
     const labels = publicationReferenceLabels(markdown);
     expect(Object.fromEntries(labels)).toEqual({
       "sec-results": "Results",
@@ -208,7 +208,7 @@ describe("scholarly publication projection", () => {
     expect(
       Object.fromEntries(
         publicationReferenceLabels(
-          `::label[a-b]\n## --A   B--\n::label[explicit]\n## \`Code\` & *Evidence*\n::label[anchor]\nParagraph`,
+          `## --A   B--\n::label[a-b]\n## \`Code\` & *Evidence*\n::label[explicit]\nParagraph\n::label[anchor]`,
         ),
       ),
     ).toEqual({

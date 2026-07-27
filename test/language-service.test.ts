@@ -12,9 +12,8 @@ describe("Scholarmark language service", () => {
   it("collects editor features with exact source ranges", () => {
     const source = `# Study
 
-::label[sec:methods]
-
 ## Methods
+::label[sec:methods]
 
 See :ref[sec:methods] and :cite[doe2026].
 
@@ -22,17 +21,17 @@ See :ref[sec:methods] and :cite[doe2026].
 Hidden :ref[missing].
 :::
 
-::label[fig:results]
 :::figure{kind="boxplot" version=1}
 ::box[A]{min=0 q1=1 median=2 q3=3 max=4}
 ::caption[Results]
 :::
+::label[fig:results]
 
 ::bibliography[]`;
     const analysis = analyzeScholarmark(source, bibliography);
 
     expect(analysis.diagnostics).toEqual([]);
-    expect(analysis.comments).toEqual([{ from: source.indexOf("::: comment"), to: source.indexOf(":::\n\n::label") + 3 }]);
+    expect(analysis.comments).toEqual([{ from: source.indexOf("::: comment"), to: source.indexOf(":::\n\n:::figure") + 3 }]);
     expect(analysis.headings.map(({ depth, title }) => ({ depth, title }))).toEqual([
       { depth: 1, title: "Study" },
       { depth: 2, title: "Methods" },
@@ -59,9 +58,8 @@ example: :ref[frontmatter]
 :cite[missing]
 \`\`\`
 
-::label[real]
-
 ## Real
+::label[real]
 
 See :ref[real].`;
     const semantic = projectMarkdownSemantics(source);

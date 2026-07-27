@@ -805,7 +805,8 @@ function collectReferences(
   const localReferences: LocalReferenceEntry[] = [];
   const counters = { h2: 0, h3: 0 };
   const headingsByOffset = new Map<number, string>();
-  const tree = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter, ["yaml", "toml"]).use(remarkDirective).parse(source);
+  const tree = parseMarkdown(source);
+  const attachments = labelAttachments(tree);
   visit(tree, "heading", (heading: Heading) => {
     const offset = heading.position?.start.offset;
     if (offset === undefined) return;
@@ -818,22 +819,52 @@ function collectReferences(
     const target = label[1]?.trim() ?? "";
     const from = label.index ?? 0;
     const to = from + label[0].length;
-    const nextBlock = nextNonBlankLine(source, to);
-    if (target && nextBlock && !/^::label\[/iu.test(nextBlock.value) && !references.has(target)) {
+    const attachedBlock = attachments.get(from);
+    const attachedFrom = attachedBlock?.position?.start.offset;
+    if (target && attachedFrom !== undefined && !references.has(target)) {
       const reference = {
         label: target,
-        title: headingsByOffset.get(nextBlock.offset) ?? target,
+        title: headingsByOffset.get(attachedFrom) ?? target,
         href: `#${target}`,
         fragment: target,
         from,
         to,
-        attachedFrom: nextBlock.offset,
+        attachedFrom,
       } satisfies LocalReferenceEntry;
       references.set(target, reference);
       localReferences.push(reference);
     }
   }
   return { references, localReferences };
+}
+
+function parseMarkdown(source: string): MdastRoot {
+  return unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkFrontmatter, ["yaml", "toml"])
+    .use(remarkDirective)
+    .parse(source) as MdastRoot;
+}
+
+function labelAttachments(tree: MdastRoot): ReadonlyMap<number, MdastRootContent> {
+  const attachments = new Map<number, MdastRootContent>();
+  for (const [index, node] of tree.children.entries()) {
+    if (!isLabelDirective(node)) continue;
+    const from = node.position?.start.offset;
+    const previous = tree.children[index - 1];
+    if (from !== undefined && previous && isLabelTarget(previous)) attachments.set(from, previous);
+  }
+  return attachments;
+}
+
+function isLabelDirective(node: MdastRootContent): boolean {
+  return node.type === "leafDirective" && node.name.toLocaleLowerCase() === "label";
+}
+
+function isLabelTarget(node: MdastRootContent): boolean {
+  const type = String(node.type);
+  return type !== "definition" && type !== "yaml" && type !== "toml" && !isLabelDirective(node);
 }
 
 function renderedReferenceTargets(
@@ -851,17 +882,6 @@ function renderedReferenceTargets(
       to: reference.to,
     };
   });
-}
-
-function nextNonBlankLine(source: string, from: number): { offset: number; value: string } | null {
-  const remainder = source.slice(from);
-  for (const match of remainder.matchAll(/^[ \t]*(\S[^\r\n]*)$/gmu)) {
-    const value = match[1];
-    if (value === undefined) continue;
-    const leadingWhitespace = match[0].length - value.length;
-    return { offset: from + (match.index ?? 0) + leadingWhitespace, value };
-  }
-  return null;
 }
 
 function collectCitationIds(source: string): ReadonlySet<string> {
@@ -905,8 +925,9 @@ function validateSyntax(
 function validateReferenceDeclarations(source: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const declarations: Array<{ target: string; match: RegExpMatchArray }> = [];
+  const attachments = labelAttachments(parseMarkdown(source));
   let bibliographyMarkers = 0;
-  for (const match of source.matchAll(/^::([a-z][a-z-]*)\[([^\]]*)\](?:\{([^}]*)\})?\s*$/gimu)) {
+  for (const match of source.matchAll(/^::([a-z][a-z-]*)\[([^\]]*)\](?:\{([^}]*)\})?[ \t]*$/gimu)) {
     const kind = match[1]?.toLowerCase() ?? "";
     if (kind === "bibliography") {
       bibliographyMarkers += 1;
@@ -918,8 +939,7 @@ function validateReferenceDeclarations(source: string): Diagnostic[] {
       if ((match[3]?.trim() ?? "") || match[2] !== id) diagnostics.push(toDiagnostic("Label must be exactly ::label[id]", match));
       if (!id) diagnostics.push(toDiagnostic("Label requires an id", match));
       else if (!/^[a-zA-Z0-9:_-]+$/u.test(id)) diagnostics.push(toDiagnostic(`Invalid label id: ${id}`, match));
-      const nextBlock = nextNonBlankLine(source, (match.index ?? 0) + match[0].length);
-      if (!nextBlock || /^::label\[/iu.test(nextBlock.value)) diagnostics.push(toDiagnostic("Label must precede a block", match));
+      if (!attachments.has(match.index ?? 0)) diagnostics.push(toDiagnostic("Label must follow a block", match));
       if (id) declarations.push({ target: id, match });
     } else if (kind !== "box" && kind !== "caption") {
       diagnostics.push(toDiagnostic(`Unsupported leaf directive: ::${kind}`, match));
