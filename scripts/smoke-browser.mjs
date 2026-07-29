@@ -1,22 +1,21 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { build } from "esbuild";
 
+const browserEntry = await readFile(new URL("../dist/browser.js", import.meta.url), "utf8");
+assert.match(browserEntry, /export \* from "\.\/markdown\.js";/u);
+assert.doesNotMatch(browserEntry, /@citation-js|node_modules|__commonJS/u);
+
 const result = await build({
-  stdin: {
-    contents: `
-      import { renderSync, projectMarkdownComments, parseNativeFigure } from "scholarmark/browser";
-      export { renderSync, projectMarkdownComments, parseNativeFigure };
-    `,
-    resolveDir: process.cwd(),
-    sourcefile: "browser-consumer.js",
-  },
+  entryPoints: ["scripts/fixtures/browser-consumer.js"],
   bundle: true,
   format: "esm",
   platform: "browser",
   target: "es2022",
   write: false,
   logLevel: "error",
+  metafile: true,
 });
 
 const bundled = result.outputFiles[0];
@@ -24,6 +23,11 @@ if (!bundled) throw new Error("Browser smoke bundle was not produced");
 const source = bundled.text;
 assert.doesNotMatch(source, /(?:from\s*|import\s*\(|require\s*\()["']node:/u);
 assert.doesNotMatch(source, /@citation-js|node-fetch|sync-fetch/u);
+assert.equal(
+  Object.keys(result.metafile.inputs).some((path) => path.includes("citation-js")),
+  false,
+  "Browser consumer graph must not contain Citation.js",
+);
 
 let fetches = 0;
 const previousFetch = globalThis.fetch;

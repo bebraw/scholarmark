@@ -1,8 +1,8 @@
 /**
  * Browser-safe Scholarmark entry point.
  *
- * The published JavaScript for this module uses the lightweight built-in
- * bibliography parser and does not include Citation.js.
+ * This module is published as ordinary ESM so consumers can tree-shake the
+ * browser-safe modules they use. It does not include Citation.js.
  */
 export * from "./bibliography.js";
 export * from "./markdown.js";

@@ -190,8 +190,9 @@ const rendered = renderSync(markdown, bibliography, "apa", {
 });
 ```
 
-The browser entry does not include Citation.js and never loads bibliography
-URLs. Pass bounded BibTeX text directly, or pass already parsed CSL-JSON:
+The browser entry is published as ordinary tree-shakeable ESM. It does not
+include Citation.js and never loads bibliography URLs. Pass bounded BibTeX text
+directly, or pass already parsed CSL-JSON:
 
 ```ts
 const rendered = renderSync(markdown, [
@@ -208,11 +209,12 @@ Hosts can also inject any synchronous bibliography parser through the render
 options. Authored Markdown still passes through the same final sanitizer as the
 default entry.
 
-`npm run test:browser` verifies that a package consumer can bundle this entry
-with esbuild's `platform: "browser"`, checks that no Node.js built-ins remain,
-checks that Citation.js and its fetch dependencies remain absent, exercises
-synchronous rendering with all three bibliography paths without a fetch, and
-reports raw and gzip bundle sizes.
+`npm run test:browser` bundles a consumer fixture that imports this entry with
+esbuild's `platform: "browser"`. This verifies the published ESM can be
+tree-shaken, checks that no Node.js built-ins remain, checks that Citation.js
+and its fetch dependencies remain absent, exercises synchronous rendering with
+all three bibliography paths without a fetch, and reports raw and gzip bundle
+sizes.
 
 Each result includes metadata for the rendered level-two and level-three
 headings. The values are collected after numbering and ID allocation, so they

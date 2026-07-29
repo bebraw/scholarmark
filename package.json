@@ -41,7 +41,7 @@
   },
   "scripts": {
     "build": "npm run build:library && npm run build:vscode",
-    "build:library": "tsc -p tsconfig.json && node scripts/build-browser.mjs",
+    "build:library": "node scripts/clean-dist.mjs && tsc -p tsconfig.json",
     "build:vscode": "node editors/vscode/esbuild.mjs",
     "package:vscode": "npm run build:vscode && npm --prefix editors/vscode run package",
     "test": "vitest run && npm run test:browser",
