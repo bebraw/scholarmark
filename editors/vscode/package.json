@@ -2,7 +2,7 @@
   "name": "scholarmark-vscode",
   "displayName": "Scholarmark",
   "description": "Syntax highlighting and language intelligence for Scholarmark documents",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "survivejs",
   "license": "MIT",
   "engines": {
