@@ -16,9 +16,12 @@ second Markdown dialect.
 - `src/markdown.ts` supplies an asynchronous unified pipeline with mdast and hast transforms for
   citations, references, labels, heading numbering, table alignment,
   authored-HTML escaping, and final allowlist sanitization.
-- Citation.js parses canonical BibTeX into CSL-JSON. Citation formatting is a
-  text-only host boundary; the reference renderer has small preview defaults
-  but does not bundle a CSL processor, locale, or style files.
+- The dependency-free parser covers the bounded citation key, author, title,
+  and year BibTeX profile. Renderers also accept parsed CSL-JSON or a synchronous
+  parser injection; full Citation.js parsing lives behind the optional
+  `scholarmark/citation-js` adapter. Citation formatting is a text-only host
+  boundary, and the renderer does not bundle a CSL processor, locale, or style
+  files.
 - Editor support reuses the same analysis through a language server. The VS Code
   client injects TextMate scopes into ordinary Markdown so comments and
   directives highlight immediately without replacing Markdown support.

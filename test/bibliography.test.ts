@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { parseBibTeX } from "../src/bibliography";
 
-describe("Citation.js BibTeX integration", () => {
-  it("parses BibTeX into CSL-JSON records", () => {
+describe("lightweight BibTeX parser", () => {
+  it("parses the bounded browser fields into CSL-JSON records", () => {
     const [entry] = parseBibTeX(`@article{Merton1942,
       author = {Merton, Robert K. and Doe, Jane},
       title = {The {Normative} Structure of Science},
       year = 1942,
-      journal = {Journal of Science},
-      doi = {10.1000/example}
+      journal = {Journal of Science}
     }`);
 
     expect(entry).toMatchObject({
@@ -20,42 +19,28 @@ describe("Citation.js BibTeX integration", () => {
         { family: "Doe", given: "Jane" },
       ],
       issued: { "date-parts": [[1942]] },
-      "container-title": "Journal of Science",
-      DOI: "10.1000/example",
     });
   });
 
-  it("delegates BibTeX macros and TeX text decoding to Citation.js", () => {
-    const [entry] = parseBibTeX(String.raw`@string{venue = "Journal"}
-      @misc{display,
-        title={{H}{T}{M}{L} {F}irst},
-        author={Veps{\"a}l{\"a}inen},
-        journal=venue
-      }`);
+  it("supports quoted, braced, and bare values across multiple entries", () => {
+    const entries = parseBibTeX(`@misc{display,
+        title="HTML First",
+        author={Research Collective},
+        year=2025
+      }
+      @book{organization, title={{A} {Braced} Title}, author={{Open Research Group}}, year={forthcoming}}`);
 
-    expect(entry).toMatchObject({
+    expect(entries[0]).toMatchObject({
       id: "display",
       title: "HTML First",
-      author: [{ family: "Vepsäläinen" }],
-      "container-title": "Journal",
+      author: [{ family: "Collective", given: "Research" }],
+      issued: { "date-parts": [[2025]] },
     });
-  });
-
-  it("preserves CSL fields for host formatters", () => {
-    const [entry] = parseBibTeX(`@book{book2026,
-      editor={Researcher, Rita},
-      publisher={Evidence Press},
-      address={Helsinki},
-      title={Inspectable Evidence},
-      year={2026}
-    }`);
-
-    expect(entry).toMatchObject({
-      id: "book2026",
-      editor: [{ family: "Researcher", given: "Rita" }],
-      publisher: "Evidence Press",
-      "publisher-place": "Helsinki",
-      title: "Inspectable Evidence",
+    expect(entries[1]).toMatchObject({
+      id: "organization",
+      title: "A Braced Title",
+      author: [{ literal: "Open Research Group" }],
+      issued: { "date-parts": [["forthcoming"]] },
     });
   });
 

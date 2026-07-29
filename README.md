@@ -83,8 +83,11 @@ Several sources can be grouped :citep[merton1942, doe2026].
 
 The supported modes are `parenthetical`, `textual`, and `full`. `:citep` is a
 shortcut for a parenthetical citation and `:citet` is a shortcut for a textual
-citation. Citation.js parses BibTeX into CSL-JSON. The built-in text formatter
-supports APA-like, Chicago author-date-like, and IEEE-like preview output.
+citation. Bibliographies are normalized to CSL-JSON. The built-in text
+formatter supports APA-like, Chicago author-date-like, and IEEE-like preview
+output. The default parser covers citation keys, authors, titles, years, and
+basic braced, quoted, or bare BibTeX values. Use the optional Citation.js
+adapter for macros, TeX decoding, and extended fields.
 
 Place the generated list of cited references exactly where it belongs:
 
@@ -187,14 +190,29 @@ const rendered = renderSync(markdown, bibliography, "apa", {
 });
 ```
 
-The browser entry bundles its BibTeX parser and never loads bibliography URLs.
-Pass bibliography text directly. Authored Markdown still passes through the
-same final sanitizer as the default entry.
+The browser entry does not include Citation.js and never loads bibliography
+URLs. Pass bounded BibTeX text directly, or pass already parsed CSL-JSON:
+
+```ts
+const rendered = renderSync(markdown, [
+  {
+    id: "merton1942",
+    author: [{ family: "Merton", given: "Robert K." }],
+    title: "The Normative Structure of Science",
+    issued: { "date-parts": [[1942]] },
+  },
+]);
+```
+
+Hosts can also inject any synchronous bibliography parser through the render
+options. Authored Markdown still passes through the same final sanitizer as the
+default entry.
 
 `npm run test:browser` verifies that a package consumer can bundle this entry
 with esbuild's `platform: "browser"`, checks that no Node.js built-ins remain,
-exercises synchronous rendering without a fetch, and reports raw and gzip
-bundle sizes.
+checks that Citation.js and its fetch dependencies remain absent, exercises
+synchronous rendering with all three bibliography paths without a fetch, and
+reports raw and gzip bundle sizes.
 
 Each result includes metadata for the rendered level-two and level-three
 headings. The values are collected after numbering and ID allocation, so they
@@ -300,9 +318,8 @@ application can add Citation.js's CSL plugin itself:
 npm install @citation-js/core @citation-js/plugin-csl
 ```
 
-Each formatter entry exposes the CSL-JSON produced by Citation.js as
-`entry.data`. This complete APA adapter uses Citation.js for both inline
-citations and bibliography entries:
+Each formatter entry exposes its CSL-JSON as `entry.data`. This complete APA
+formatter uses Citation.js for both inline citations and bibliography entries:
 
 ```js
 import { Cite } from "@citation-js/core";
@@ -350,6 +367,26 @@ const rendered = await render(markdown, bibliography, "apa", {
 Change `template` and `lang` to select another installed or registered CSL style
 and locale. Formatter output is treated as text and still appears inside
 Scholarmark's sanitized, interactive citation markup.
+
+For complete BibTeX parsing, install the optional parser peers and inject the
+adapter:
+
+```sh
+npm install @citation-js/core @citation-js/plugin-bibtex
+```
+
+```ts
+import { renderSync } from "scholarmark/browser";
+import { parseBibliography } from "scholarmark/citation-js";
+
+const rendered = renderSync(markdown, bibliography, "apa", {
+  parseBibliography,
+});
+```
+
+The adapter is synchronous and returns CSL-JSON records, so the same function
+can be used with `render`, `renderTree`, `renderTreeSync`, `diagnose`, or the
+exported bibliography helpers.
 
 ## VS Code extension
 

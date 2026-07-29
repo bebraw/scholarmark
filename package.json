@@ -9,7 +9,7 @@
   },
   "type": "module",
   "sideEffects": [
-    "./dist/bibliography.js"
+    "./dist/citation-js.js"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,6 +21,10 @@
     "./browser": {
       "types": "./dist/browser.d.ts",
       "import": "./dist/browser.js"
+    },
+    "./citation-js": {
+      "types": "./dist/citation-js.d.ts",
+      "import": "./dist/citation-js.js"
     }
   },
   "files": [
@@ -48,8 +52,6 @@
     "typecheck:vscode": "tsc -p editors/vscode/tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@citation-js/core": "0.8.2",
-    "@citation-js/plugin-bibtex": "0.8.2",
     "@types/hast": "3.0.5",
     "@types/mdast": "4.0.4",
     "@types/unist": "3.0.3",
@@ -64,6 +66,8 @@
     "unist-util-visit": "5.0.0"
   },
   "devDependencies": {
+    "@citation-js/core": "0.8.2",
+    "@citation-js/plugin-bibtex": "0.8.2",
     "@types/node": "20.19.43",
     "@types/vscode": "1.125.0",
     "@vscode/vsce": "3.9.2",
@@ -76,5 +80,17 @@
     "vscode-oniguruma": "2.0.1",
     "vscode-textmate": "9.3.2",
     "vitest": "4.1.8"
+  },
+  "peerDependencies": {
+    "@citation-js/core": "^0.8.2",
+    "@citation-js/plugin-bibtex": "^0.8.2"
+  },
+  "peerDependenciesMeta": {
+    "@citation-js/core": {
+      "optional": true
+    },
+    "@citation-js/plugin-bibtex": {
+      "optional": true
+    }
   }
 }

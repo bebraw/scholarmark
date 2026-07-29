@@ -1,8 +1,8 @@
 /**
  * Browser-safe Scholarmark entry point.
  *
- * The published JavaScript for this module is bundled so Citation.js's
- * Node-oriented network loaders cannot enter a host application's graph.
+ * The published JavaScript for this module uses the lightweight built-in
+ * bibliography parser and does not include Citation.js.
  */
 export * from "./bibliography.js";
 export * from "./markdown.js";

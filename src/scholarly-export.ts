@@ -1,4 +1,11 @@
-import { parseBibTeX, type CitationAuthor, type CitationData } from "./bibliography.js";
+import {
+  isCitationData,
+  parseBibTeX,
+  type BibliographyInput,
+  type BibliographyParser,
+  type CitationAuthor,
+  type CitationData,
+} from "./bibliography.js";
 import type { CitationStyle } from "./types.js";
 
 export interface PublicationTextDirective {
@@ -13,7 +20,7 @@ export interface PublicationCitationEntry {
   readonly title: string;
   readonly year: string;
   readonly number: number;
-  /** The Citation.js CSL-JSON record, available to custom and CSL formatters. */
+  /** The CSL-JSON record, available to custom and CSL formatters. */
   readonly data: CitationData;
 }
 
@@ -104,9 +111,13 @@ export function publicationReferenceLabel(directive: PublicationTextDirective, r
   return plainInlineText(customText || references.get(target) || target);
 }
 
-export function publicationCitationEntries(bibliography: string): ReadonlyMap<string, PublicationCitationEntry> {
+export function publicationCitationEntries(
+  bibliography: BibliographyInput,
+  parseBibliography: BibliographyParser = parseBibTeX,
+): ReadonlyMap<string, PublicationCitationEntry> {
+  const records = typeof bibliography === "string" ? parseBibliography(bibliography) : bibliography.filter(isCitationData);
   return new Map(
-    parseBibTeX(bibliography).map((entry, index) => [
+    records.map((entry, index) => [
       entry.id,
       {
         id: entry.id,

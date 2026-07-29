@@ -857,4 +857,19 @@ describe("bibliography helpers", () => {
     expect(slugify("  `Mixed`___ punctuation / and spaces  ")).toBe("mixed-punctuation-and-spaces");
     expect(slugify("`!`")).toBe("");
   });
+
+  it("accepts parsed CSL entries and a synchronous parser injection", () => {
+    const parsed = [{ id: "parsed", author: [{ family: "Reader" }], title: "Input", issued: { "date-parts": [[2025]] } }];
+    expect(render("See :cite[parsed].", parsed).html).toContain("Reader, 2025");
+
+    let received = "";
+    const injected = render("See :cite[injected].", "host syntax", "apa", {
+      parseBibliography(source) {
+        received = source;
+        return [{ id: "injected", author: [{ family: "Parser" }], title: "Input", issued: { "date-parts": [[2024]] } }];
+      },
+    });
+    expect(received).toBe("host syntax");
+    expect(injected.html).toContain("Parser, 2024");
+  });
 });

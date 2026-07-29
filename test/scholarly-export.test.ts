@@ -158,10 +158,17 @@ describe("scholarly publication projection", () => {
     );
   });
 
-  it("lets a host formatter consume Citation.js CSL-JSON", () => {
-    const bibliography = publicationCitationEntries(
-      "@article{doe2026, author={Doe, Jane}, title={Methods}, journal={Evidence}, year={2026}}",
-    );
+  it("lets a host formatter consume host-provided CSL-JSON", () => {
+    const bibliography = publicationCitationEntries([
+      {
+        id: "doe2026",
+        type: "article-journal",
+        author: [{ family: "Doe", given: "Jane" }],
+        title: "Methods",
+        issued: { "date-parts": [[2026]] },
+        "container-title": "Evidence",
+      },
+    ]);
     let directive: PublicationTextDirective | undefined;
     replacePublicationTextDirectives(":cite[doe2026]", (value) => {
       directive = value;

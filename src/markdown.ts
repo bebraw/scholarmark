@@ -12,6 +12,7 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 import { SKIP, visit } from "unist-util-visit";
+import type { BibliographyInput, BibliographyParser } from "./bibliography.js";
 import {
   citationModeForDirective,
   defaultCitationFormatter,
@@ -88,11 +89,15 @@ export interface ReferenceTarget {
 }
 
 export interface DiagnoseOptions {
+  /** Override parsing of BibTeX bibliography text. */
+  readonly parseBibliography?: BibliographyParser;
   readonly referenceTargets?: ReadonlyMap<string, ReferenceTarget>;
 }
 
 export interface MarkdownRenderOptions {
   readonly headingNumbers?: HeadingNumbers;
+  /** Override parsing of BibTeX bibliography text, for example with the optional Citation.js adapter. */
+  readonly parseBibliography?: BibliographyParser;
   /** Override citation and bibliography text formatting, for example with a host-installed CSL processor. */
   readonly citationFormatter?: CitationFormatter;
   /** Publication-wide reference targets. These take precedence over labels declared in the current document. */
@@ -104,8 +109,8 @@ export interface SyncMarkdownRenderOptions extends Omit<MarkdownRenderOptions, "
 }
 
 /** Validate a document using the same syntax and native-figure rules as rendering. */
-export function diagnose(source: string, bibliographySource = "", options: DiagnoseOptions = {}): Diagnostic[] {
-  const prepared = prepareRender(source, bibliographySource, options.referenceTargets);
+export function diagnose(source: string, bibliography: BibliographyInput = "", options: DiagnoseOptions = {}): Diagnostic[] {
+  const prepared = prepareRender(source, bibliography, options.referenceTargets, {}, options.parseBibliography);
   return [...prepared.diagnostics, ...validateNativeFigureSyntax(projectMarkdownSemantics(prepared.normalized))].sort(
     (left, right) => left.from - right.from,
   );
@@ -211,11 +216,11 @@ const previewSchema: Schema = {
 
 export async function render(
   source: string,
-  bibliographySource: string,
+  bibliography: BibliographyInput,
   citationStyle: CitationStyle = "apa",
   options: MarkdownRenderOptions = {},
 ): Promise<RenderedDocument> {
-  const rendered = await renderTree(source, bibliographySource, citationStyle, options);
+  const rendered = await renderTree(source, bibliography, citationStyle, options);
   return {
     html: toHtml(rendered.tree),
     diagnostics: rendered.diagnostics,
@@ -227,11 +232,11 @@ export async function render(
 /** Render synchronously when every configured formatter and transform is synchronous. */
 export function renderSync(
   source: string,
-  bibliographySource: string,
+  bibliography: BibliographyInput,
   citationStyle: CitationStyle = "apa",
   options: SyncMarkdownRenderOptions = {},
 ): RenderedDocument {
-  const rendered = renderTreeSync(source, bibliographySource, citationStyle, options);
+  const rendered = renderTreeSync(source, bibliography, citationStyle, options);
   return {
     html: toHtml(rendered.tree),
     diagnostics: rendered.diagnostics,
@@ -243,11 +248,11 @@ export function renderSync(
 /** Return sanitized HAST for trusted host-side transformations. */
 export async function renderTree(
   source: string,
-  bibliographySource: string,
+  bibliography: BibliographyInput,
   citationStyle: CitationStyle = "apa",
   options: MarkdownRenderOptions = {},
 ): Promise<RenderedTreeDocument> {
-  const prepared = prepareRender(source, bibliographySource, options.referenceTargets, options.headingNumbers);
+  const prepared = prepareRender(source, bibliography, options.referenceTargets, options.headingNumbers, options.parseBibliography);
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
@@ -261,11 +266,11 @@ export async function renderTree(
 /** Return sanitized HAST synchronously when every configured transform is synchronous. */
 export function renderTreeSync(
   source: string,
-  bibliographySource: string,
+  bibliography: BibliographyInput,
   citationStyle: CitationStyle = "apa",
   options: SyncMarkdownRenderOptions = {},
 ): RenderedTreeDocument {
-  const prepared = prepareRender(source, bibliographySource, options.referenceTargets, options.headingNumbers);
+  const prepared = prepareRender(source, bibliography, options.referenceTargets, options.headingNumbers, options.parseBibliography);
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
@@ -300,14 +305,15 @@ interface LocalReferenceEntry extends ReferenceEntry {
 
 function prepareRender(
   source: string,
-  bibliographySource: string,
+  bibliographyInput: BibliographyInput,
   referenceTargets: ReadonlyMap<string, ReferenceTarget> = new Map(),
   headingNumbers: HeadingNumbers = {},
+  parseBibliography?: BibliographyParser,
 ): PreparedRender {
   const normalized = source.replaceAll("\r\n", "\n");
   const comments = projectMarkdownComments(normalized);
   const semanticSource = projectMarkdownSemantics(normalized);
-  const bibliography = parseBibliography(bibliographySource);
+  const bibliography = bibliographyEntries(bibliographyInput, parseBibliography);
   const citedIds = collectCitationIds(semanticSource);
   const { references, localReferences } = collectReferences(semanticSource, headingNumbers);
   for (const [label, target] of referenceTargets) references.set(label, target);
@@ -468,8 +474,12 @@ function isValueNode(node: Node): node is Node & { value: string } {
   return "value" in node && typeof node.value === "string";
 }
 
-export function parseBibliography(source: string): Map<string, BibliographyEntry> {
-  return new Map(publicationCitationEntries(source));
+export function parseBibliography(input: BibliographyInput, parser?: BibliographyParser): Map<string, BibliographyEntry> {
+  return bibliographyEntries(input, parser);
+}
+
+function bibliographyEntries(input: BibliographyInput, parser?: BibliographyParser): Map<string, BibliographyEntry> {
+  return new Map(publicationCitationEntries(input, parser));
 }
 
 export function slugify(value: string): string {

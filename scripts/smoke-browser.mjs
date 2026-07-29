@@ -23,6 +23,7 @@ const bundled = result.outputFiles[0];
 if (!bundled) throw new Error("Browser smoke bundle was not produced");
 const source = bundled.text;
 assert.doesNotMatch(source, /(?:from\s*|import\s*\(|require\s*\()["']node:/u);
+assert.doesNotMatch(source, /@citation-js|node-fetch|sync-fetch/u);
 
 let fetches = 0;
 const previousFetch = globalThis.fetch;
@@ -43,6 +44,16 @@ try {
   assert.match(rendered.html, /data-source-from="/u);
   assert.match(rendered.html, /&#x3C;script>alert\(1\)&#x3C;\/script>/u);
   assert.doesNotMatch(rendered.html, /javascript:|Hidden note/u);
+  const parsedBibliography = renderSync("See :cite[parsed].", [
+    { id: "parsed", author: [{ family: "Reader", given: "Rita" }], title: "Parsed input", issued: { "date-parts": [[2025]] } },
+  ]);
+  assert.match(parsedBibliography.html, /Reader, 2025/u);
+  const injectedBibliography = renderSync("See :cite[injected].", "custom input", "apa", {
+    parseBibliography: () => [
+      { id: "injected", author: [{ family: "Parser" }], title: "Injected parser", issued: { "date-parts": [[2024]] } },
+    ],
+  });
+  assert.match(injectedBibliography.html, /Parser, 2024/u);
   const urlBibliography = renderSync("See :cite[remote].", "https://example.test/references.bib");
   assert.match(urlBibliography.diagnostics[0]?.message ?? "", /Missing citation: remote/u);
   assert.equal(fetches, 0);
