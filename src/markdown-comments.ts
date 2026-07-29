@@ -11,6 +11,7 @@ export interface MarkdownCommentProjection {
 
 const commentOpening = /^[\t ]*:::[\t ]+comment[\t ]*$/iu;
 const commentClosing = /^[\t ]*:::[\t ]*$/u;
+const lineComment = /^[\t ]*%/u;
 const frontmatterDelimiter = /^(?:---|\+\+\+)[\t ]*$/u;
 const fenceOpening = /^[\t ]{0,3}(?<marker>`{3,}|~{3,})/u;
 
@@ -63,7 +64,10 @@ export function projectMarkdownComments(source: string): MarkdownCommentProjecti
       continue;
     }
 
-    if (commentOpening.test(content)) {
+    if (lineComment.test(content)) {
+      ranges.push({ from: offset, to: offset + content.length });
+      masked.push(" ".repeat(content.length), newline);
+    } else if (commentOpening.test(content)) {
       commentFrom = offset;
       masked.push(" ".repeat(content.length), newline);
     } else {

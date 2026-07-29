@@ -40,6 +40,14 @@ describe("VS Code TextMate grammar", () => {
     }
   });
 
+  it("scopes whole-line comments but not escaped leading percentages", () => {
+    const comment = grammar.tokenizeLine("  % Review this sentence.", INITIAL);
+    expect(comment.tokens.some((token) => token.scopes.includes("comment.line.percentage.scholarmark"))).toBe(true);
+
+    const escaped = grammar.tokenizeLine("\\% A literal percent sign.", INITIAL);
+    expect(escaped.tokens.some((token) => token.scopes.includes("comment.line.percentage.scholarmark"))).toBe(false);
+  });
+
   it("scopes directives, labels, and attributes without treating plain assignments as attributes", () => {
     const directive = grammar.tokenizeLine(':cite[doe2026]{mode=textual locator="p. 4"}', INITIAL);
     const scopes = directive.tokens.flatMap((token) => token.scopes);

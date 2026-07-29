@@ -72,6 +72,22 @@ See :ref[real].`;
     expect(analysis.diagnostics).toEqual([]);
   });
 
+  it("excludes whole-line comments from editor semantics", () => {
+    const source = `## Visible
+% ## Hidden
+% :cite[missing] :ref[missing]
+\\% literal`;
+    const analysis = analyzeScholarmark(source, bibliography);
+
+    expect(analysis.diagnostics).toEqual([]);
+    expect(analysis.comments).toEqual([
+      { from: source.indexOf("% ##"), to: source.indexOf("\n% :cite") },
+      { from: source.indexOf("% :cite"), to: source.indexOf("\n\\%") },
+    ]);
+    expect(analysis.headings.map((heading) => heading.title)).toEqual(["Visible"]);
+    expect(analysis.occurrences).toEqual([]);
+  });
+
   it("returns diagnostics suitable for an editor", () => {
     const source = ":cite[missing] :ref[absent]";
     expect(analyzeScholarmark(source, bibliography).diagnostics.map((diagnostic) => diagnostic.message)).toEqual([
@@ -112,5 +128,7 @@ See :ref[table:results]{text="the results table"}.`;
     expect(isScholarmarkDocument("```markdown\n:cite[example]\n```")).toBe(false);
     expect(isScholarmarkDocument("Evidence :cite[example].")).toBe(true);
     expect(isScholarmarkDocument("::: comment\nReview this.\n:::")).toBe(true);
+    expect(isScholarmarkDocument("% Review this sentence.")).toBe(true);
+    expect(isScholarmarkDocument("\\% A literal percent sign.")).toBe(false);
   });
 });

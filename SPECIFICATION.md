@@ -54,6 +54,10 @@ second Markdown dialect.
 - A postfix `::caption[text]` on a GFM table renders as its sanitized HTML
   caption. An optional table label follows the caption.
 - YAML and TOML frontmatter is parsed but not rendered in the preview.
+- A `%` as the first non-whitespace character comments out its physical source
+  line without splitting a surrounding prose paragraph. `\%` escapes a literal
+  leading percent. Commented lines do not render or contribute document
+  semantics.
 - Standalone `::: comment` … `:::` blocks remain canonical source but do not
   render or contribute headings, citations, references, or validation inside
   the block. Markers in frontmatter and fenced code remain literal. An unclosed

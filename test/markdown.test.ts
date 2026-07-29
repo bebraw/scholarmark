@@ -510,6 +510,29 @@ After the comment.`,
     expect(rendered.html).not.toContain('id="hidden"');
   });
 
+  it("omits whole-line comments without splitting a prose paragraph", () => {
+    const rendered = render(
+      `First sentence goes here.
+% Hidden :cite[missing] and :unknown[value].
+Third sentence goes here.`,
+      "",
+    );
+    const html = withoutSourcePositions(rendered.html);
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(html.match(/<p>/gu)).toHaveLength(1);
+    expect(html).toContain("First sentence goes here.");
+    expect(html).toContain("Third sentence goes here.");
+    expect(html).not.toContain("Hidden");
+  });
+
+  it("renders an escaped leading percent literally", () => {
+    const rendered = render("\\% literal at the start\nNext sentence.", "");
+
+    expect(rendered.diagnostics).toEqual([]);
+    expect(withoutSourcePositions(rendered.html)).toContain("<p>% literal at the start\nNext sentence.</p>");
+  });
+
   it("diagnoses an unclosed comment without rendering its contents", () => {
     const rendered = render("Before\n\n::: comment\nHidden", "");
     expect(rendered.diagnostics).toEqual([{ severity: "error", message: "Comment block is not closed", from: 8, to: 19 }]);

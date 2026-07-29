@@ -6,7 +6,23 @@ function fencedCommentProjection(opening: string, closing: string) {
   return { source, projection: projectMarkdownComments(source) };
 }
 
-describe("Markdown comment blocks", () => {
+describe("Markdown comments", () => {
+  it("masks whole-line comments while preserving offsets and line endings", () => {
+    const source = "First sentence.\r\n  % Hidden :cite[missing].\r\nThird sentence.\r\n";
+    const result = projectMarkdownComments(source);
+    const from = source.indexOf("  %");
+
+    expect(result.masked).toBe(`First sentence.\r\n${" ".repeat("  % Hidden :cite[missing].".length)}\r\nThird sentence.\r\n`);
+    expect(result.masked).toHaveLength(source.length);
+    expect(result.ranges).toEqual([{ from, to: source.indexOf("\r\n", from) }]);
+    expect(result.unclosedFrom).toBeNull();
+  });
+
+  it("allows an escaped leading percent and ordinary percentages", () => {
+    const source = "\\% literal at the start\nEvidence is 95% complete.\n";
+    expect(projectMarkdownComments(source)).toEqual({ masked: source, ranges: [], unclosedFrom: null });
+  });
+
   it("masks complete comment blocks without changing offsets or line endings", () => {
     const source = "Before\r\n::: comment\r\nHidden :cite[source].\r\n:::\r\nAfter\r\n";
     const result = projectMarkdownComments(source);
@@ -20,12 +36,14 @@ describe("Markdown comment blocks", () => {
   it("does not recognize comment markers inside frontmatter or fenced code", () => {
     const source = `---
 value: ::: comment
+% frontmatter comment example
 ---
 
 \`\`\`md
 ::: comment
 inside code
 :::
+% line comment example
 \`\`\`
 `;
     expect(projectMarkdownComments(source)).toEqual({ masked: source, ranges: [], unclosedFrom: null });

@@ -97,6 +97,29 @@ A statement with supporting detail.[^detail]
 
 Do not use raw HTML to implement citations or cross-references.
 
+## Comments
+
+A `%` as the first non-whitespace character comments out that physical source
+line. The line does not render, contribute document semantics, or split a prose
+paragraph. Use `\%` for a literal percent at the beginning of a line. Percent
+signs elsewhere remain ordinary text.
+
+```markdown
+First sentence goes here.
+% Commented sentence goes here.
+Third sentence goes here.
+```
+
+Use `::: comment` for a block comment:
+
+```markdown
+::: comment
+Verify this interpretation before submission.
+:::
+```
+
+Comment markers inside frontmatter and fenced code are literal.
+
 ## Validation
 
 The build rejects:

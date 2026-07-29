@@ -99,8 +99,18 @@ Place the generated list of cited references exactly where it belongs:
 
 ### Portable comments
 
-Comment blocks remain in the manuscript source but are omitted from rendered
-output and validation. This is useful for notes between collaborators.
+Comments remain in the manuscript source but are omitted from rendered output
+and validation. Prefix a physical line with `%` to comment it out without
+splitting the surrounding prose paragraph. Escape a literal leading percent as
+`\%`.
+
+```markdown
+First sentence goes here.
+% This sentence needs another source.
+Third sentence goes here.
+```
+
+Use a block for longer notes between collaborators:
 
 ```markdown
 ::: comment
@@ -394,7 +404,7 @@ exported bibliography helpers.
 
 The included extension adds Scholarmark support to ordinary Markdown files:
 
-- Theme-aware highlighting and folding for `::: comment` blocks
+- Theme-aware highlighting for `%` lines and highlighting and folding for `::: comment` blocks
 - Highlighting for citations, references, labels, bibliography markers, and figures
 - Live diagnostics, completion, hover information, and document symbols
 - Go to definition for labels and BibTeX keys
