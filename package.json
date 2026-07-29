@@ -17,6 +17,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
     }
   },
   "files": [
@@ -33,10 +37,11 @@
   },
   "scripts": {
     "build": "npm run build:library && npm run build:vscode",
-    "build:library": "tsc -p tsconfig.json",
+    "build:library": "tsc -p tsconfig.json && node scripts/build-browser.mjs",
     "build:vscode": "node editors/vscode/esbuild.mjs",
     "package:vscode": "npm run build:vscode && npm --prefix editors/vscode run package",
-    "test": "vitest run",
+    "test": "vitest run && npm run test:browser",
+    "test:browser": "npm run build:library && node scripts/smoke-browser.mjs",
     "test:lsp": "npm run build:vscode && node scripts/smoke-language-server.mjs",
     "typecheck": "npm run typecheck:library && npm run typecheck:vscode",
     "typecheck:library": "tsc -p tsconfig.json --noEmit",

@@ -172,6 +172,30 @@ Neither function fetches remote resources implicitly. Resolve external data in
 the host application and pass the resulting Markdown and bibliography to the
 renderer.
 
+### Render in a browser
+
+Browser applications should use the dedicated browser entry. It exposes the
+same synchronous renderer and integration helpers without importing Node.js
+built-ins:
+
+```ts
+import { headingNumbersByOffset, renderSync } from "scholarmark/browser";
+
+const headingNumbers = headingNumbersByOffset(markdown);
+const rendered = renderSync(markdown, bibliography, "apa", {
+  headingNumbers,
+});
+```
+
+The browser entry bundles its BibTeX parser and never loads bibliography URLs.
+Pass bibliography text directly. Authored Markdown still passes through the
+same final sanitizer as the default entry.
+
+`npm run test:browser` verifies that a package consumer can bundle this entry
+with esbuild's `platform: "browser"`, checks that no Node.js built-ins remain,
+exercises synchronous rendering without a fetch, and reports raw and gzip
+bundle sizes.
+
 Each result includes metadata for the rendered level-two and level-three
 headings. The values are collected after numbering and ID allocation, so they
 can be used directly for navigation:
