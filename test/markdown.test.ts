@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   diagnose,
+  figureNumbersByOffset,
   headingNumbersByOffset,
   parseBibliography,
   render as renderAsync,
@@ -8,6 +9,7 @@ import {
   renderTree,
   renderTreeSync,
   slugify,
+  tableNumbersByOffset,
   toHtml,
 } from "../src/markdown";
 
@@ -135,15 +137,16 @@ See :ref[ch:technology] and :ref[sec:citing]{text="the LaTeX section"}.`;
     const figureFrom = source.indexOf(":::figure");
 
     expect(rendered.diagnostics).toEqual([]);
-    expect(html).toContain('<span class="semantic-label" id="fig:fcp-summary"></span>');
-    expect(html).toContain('<figure class="native-figure native-figure-boxplot">');
+    expect(html).toContain('<figure class="native-figure native-figure-boxplot" id="fig:fcp-summary">');
     expect(html).toContain(`<svg viewBox="0 0 720 168" role="img" aria-labelledby="native-figure-title-${figureFrom}"`);
     expect(html).toContain(
       `<title id="native-figure-title-${figureFrom}">First Contentful Paint across five benchmark runs.</title>`,
     );
     expect(html).toContain('class="native-figure-box"');
     expect(html).toContain("SSR &#x26; FCP");
-    expect(html).toContain("<figcaption>First Contentful Paint across five benchmark runs.</figcaption>");
+    expect(html).toContain(
+      '<figcaption class="semantic-figure-caption"><span class="semantic-figure-number">Figure 1.</span> First Contentful Paint across five benchmark runs.</figcaption>',
+    );
     expect(html).not.toMatch(/(?:NaN|Infinity)/u);
   });
 
@@ -352,7 +355,7 @@ unfinished`;
     expect(html).toContain('<h3 id="three"><span class="section-number">0.1 </span>Three</h3>');
     expect(html).toContain("<p>line one\nline two</p>");
     expect(html).toContain("<b>Four</b>");
-    expect(render("", "")).toEqual({ html: "", diagnostics: [], headings: [], references: [] });
+    expect(render("", "")).toEqual({ html: "", diagnostics: [], headings: [], references: [], captionedBlocks: [] });
   });
 
   it("returns final numbered heading metadata without ID collisions", () => {
@@ -419,18 +422,22 @@ An ordinary block.
         label: "sec:methods",
         title: "3.2 Methods & materials",
         fragment: "sec:methods",
+        kind: "heading",
+        number: "3.2",
         ...range("::label[sec:methods]"),
       },
       {
         label: "table:data",
         title: "table:data",
         fragment: "table:data",
+        kind: "table",
         ...range("::label[table:data]"),
       },
       {
         label: "paragraph:note",
         title: "paragraph:note",
         fragment: "paragraph:note",
+        kind: "paragraph",
         ...range("::label[paragraph:note]"),
       },
     ]);
@@ -784,6 +791,7 @@ Footnote.[^a]
       diagnostics: [{ severity: "error", message: "Comment block is not closed", from: 0, to: source.length }],
       headings: [],
       references: [],
+      captionedBlocks: [],
     });
   });
 
@@ -844,9 +852,157 @@ Paragraph
 
     expect(rendered.diagnostics).toEqual([]);
     expect(diagnose(source)).toEqual([]);
-    expect(html).toContain('<table><caption class="semantic-table-caption">Measured values &#x26; observations</caption>');
-    expect(html).toContain('<span class="semantic-label" id="table:value"></span>');
+    expect(html).toContain(
+      '<table id="table:value"><caption class="semantic-table-caption"><span class="semantic-table-number">Table 1.</span> Measured values &#x26; observations</caption>',
+    );
+    expect(html).not.toContain('class="semantic-label" id="table:value"');
     expect(html).toContain('<a class="semantic-reference" data-reference="table:value" href="#table:value">Custom label</a>');
+  });
+
+  it("numbers captioned tables and figures independently with offset overrides and metadata", async () => {
+    const source = `| First table |
+| --- |
+| A |
+::caption[First measurement.]
+::label[table:first]
+
+:::figure{kind="boxplot" version=1}
+::box[A]{min=1 q1=2 median=3 q3=4 max=5}
+::caption[First distribution.]
+:::
+::label[fig:first]
+
+| Second table |
+| --- |
+| B |
+::caption[First measurement.]
+::label[table:second]
+
+:::figure{kind="boxplot" version=1}
+::box[B]{min=2 q1=3 median=4 q3=5 max=6}
+::caption[Second distribution.]
+:::
+
+::: comment
+| Hidden table |
+| --- |
+| C |
+::caption[Hidden measurement.]
+:::
+
+:::figure{kind="boxplot" version=1}
+::box[Invalid]{min=5 q1=4 median=3 q3=2 max=1}
+::caption[Invalid distribution.]
+:::
+
+| Uncaptioned |
+| --- |
+| D |
+
+See :ref[table:first], :ref[fig:first], and :ref[table:first]{text="the measurements"}.`;
+    const firstTableFrom = source.indexOf("| First table |");
+    const secondTableFrom = source.indexOf("| Second table |");
+    const firstFigureFrom = source.indexOf(":::figure");
+    const secondFigureFrom = source.indexOf(":::figure", firstFigureFrom + 1);
+    const options = {
+      tableNumbers: { [firstTableFrom]: "4.1", [secondTableFrom]: "4.2" },
+      figureNumbers: { [firstFigureFrom]: "4.1", [secondFigureFrom]: "4.2" },
+    };
+
+    expect(tableNumbersByOffset(source)).toEqual({
+      [firstTableFrom]: "1",
+      [secondTableFrom]: "2",
+    });
+    expect(figureNumbersByOffset(source)).toEqual({
+      [firstFigureFrom]: "1",
+      [secondFigureFrom]: "2",
+    });
+
+    const rendered = render(source, "", "apa", options);
+    expect(await renderAsync(source, "", "apa", options)).toEqual(rendered);
+    const html = withoutSourcePositions(rendered.html);
+    expect(html).toContain(
+      '<table id="table:first"><caption class="semantic-table-caption"><span class="semantic-table-number">Table 4.1.</span> First measurement.</caption>',
+    );
+    expect(html).toContain(
+      '<table id="table:second"><caption class="semantic-table-caption"><span class="semantic-table-number">Table 4.2.</span> First measurement.</caption>',
+    );
+    expect(html).toContain('<figure class="native-figure native-figure-boxplot" id="fig:first">');
+    expect(html).toContain('<span class="semantic-figure-number">Figure 4.1.</span> First distribution.');
+    expect(html).toContain('<span class="semantic-figure-number">Figure 4.2.</span> Second distribution.');
+    expect(html).toContain('href="#table:first">Table 4.1</a>');
+    expect(html).toContain('href="#fig:first">Figure 4.1</a>');
+    expect(html).toContain('href="#table:first">the measurements</a>');
+    expect(html).not.toContain("Hidden measurement");
+    expect(html).not.toContain("Figure 4.3");
+    expect(html).not.toContain("Table 4.3");
+
+    expect(rendered.captionedBlocks).toEqual([
+      {
+        kind: "table",
+        id: "table:first",
+        number: "4.1",
+        caption: "First measurement.",
+        from: firstTableFrom,
+        to: source.indexOf("\n::caption[First measurement.]"),
+      },
+      {
+        kind: "figure",
+        id: "fig:first",
+        number: "4.1",
+        caption: "First distribution.",
+        from: firstFigureFrom,
+        to: source.indexOf("\n::label[fig:first]"),
+      },
+      {
+        kind: "table",
+        id: "table:second",
+        number: "4.2",
+        caption: "First measurement.",
+        from: secondTableFrom,
+        to: source.indexOf("\n::caption[First measurement.]", source.indexOf("::caption[First measurement.]") + 1),
+      },
+      {
+        kind: "figure",
+        number: "4.2",
+        caption: "Second distribution.",
+        from: secondFigureFrom,
+        to: source.indexOf("\n\n::: comment"),
+      },
+    ]);
+    expect(rendered.references).toEqual([
+      expect.objectContaining({
+        label: "table:first",
+        title: "Table 4.1",
+        kind: "table",
+        number: "4.1",
+      }),
+      expect.objectContaining({
+        label: "fig:first",
+        title: "Figure 4.1",
+        kind: "figure",
+        number: "4.1",
+      }),
+      expect.objectContaining({
+        label: "table:second",
+        title: "Table 4.2",
+        kind: "table",
+        number: "4.2",
+      }),
+    ]);
+
+    const crossDocument = render(":ref[table:first]", "", "apa", {
+      referenceTargets: new Map([
+        [
+          "table:first",
+          {
+            title: rendered.references[0]?.title ?? "",
+            href: "/chapter-4/#table:first",
+          },
+        ],
+      ]),
+    });
+    expect(withoutSourcePositions(crossDocument.html)).toContain('href="/chapter-4/#table:first">Table 4.1</a>');
   });
 
   it("rejects captions that do not follow tables", () => {

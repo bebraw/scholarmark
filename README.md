@@ -1,8 +1,8 @@
 # Scholarmark
 
 Scholarmark is a scientific Markdown dialect with citations, semantic
-cross-references, numbered sections, bibliography placement, portable comment
-blocks, and bounded native figures.
+cross-references, numbered sections, numbered tables and figures, bibliography
+placement, portable comment blocks, and bounded native figures.
 
 This repository contains the language [syntax specification](./SYNTAX.md), the
 [Kirjolab implementation contract](./SPECIFICATION.md), and a TypeScript
@@ -46,9 +46,8 @@ See :ref[sec:analysis].
 See :ref[sec:analysis]{text="the analysis section"}.
 ```
 
-The label id is also the rendered fragment. A reference to a labelled heading
-uses its numbered title by default. For other blocks, provide readable link
-text when needed:
+The label id is also the rendered fragment. References to labelled headings,
+captioned tables, and native figures use their numbered titles by default:
 
 ```markdown
 | Sample | Value |
@@ -57,13 +56,14 @@ text when needed:
 ::caption[Measurements collected during the trial.]
 ::label[table:measurements]
 
-The measurements appear in
-:ref[table:measurements]{text="the measurements table"}.
+The measurements appear in :ref[table:measurements].
+For emphasis, see :ref[table:measurements]{text="the measurements table"}.
 ```
 
 Place `::caption[...]` immediately after a GFM table. When the table also needs
 a reference target, place its `::label[...]` after the caption as shown above.
-The caption renders as the table's native HTML `<caption>`.
+The caption renders as the table's native HTML `<caption>`, prefixed by its
+independently generated table number. The label becomes the table's own `id`.
 
 ### Citations
 
@@ -192,11 +192,20 @@ same synchronous renderer and integration helpers without importing Node.js
 built-ins:
 
 ```ts
-import { headingNumbersByOffset, renderSync } from "scholarmark/browser";
+import {
+  figureNumbersByOffset,
+  headingNumbersByOffset,
+  renderSync,
+  tableNumbersByOffset,
+} from "scholarmark/browser";
 
 const headingNumbers = headingNumbersByOffset(markdown);
+const tableNumbers = tableNumbersByOffset(markdown);
+const figureNumbers = figureNumbersByOffset(markdown);
 const rendered = renderSync(markdown, bibliography, "apa", {
   headingNumbers,
+  tableNumbers,
+  figureNumbers,
 });
 ```
 
@@ -240,6 +249,24 @@ Each heading also includes `from` and `to`, its offsets in the normalized
 Markdown source. Duplicate titles receive the same unique suffixes used by the
 rendered HTML.
 
+Captioned tables and valid native figures are numbered in independent source
+order sequences. `rendered.captionedBlocks` exposes each block's `kind`, final
+`number`, plain-text `caption`, normalized `from` and `to` offsets, and optional
+label `id`. Hosts can replace values returned by `tableNumbersByOffset()` and
+`figureNumbersByOffset()` with chapter-prefixed values before rendering:
+
+```ts
+const tableNumbers = Object.fromEntries(
+  Object.entries(tableNumbersByOffset(markdown)).map(([offset, number]) => [
+    offset,
+    `4.${number}`,
+  ]),
+);
+```
+
+The same final number is used in the visible caption, metadata, and default
+reference title. Authored `:ref[id]{text="..."}` remains authoritative.
+
 ### Resolve references across documents
 
 Pass publication-wide targets through `referenceTargets` when separately
@@ -274,10 +301,11 @@ A host target takes precedence over a same-named local `::label`. Its complete
 rendered link retains the authored id in `data-reference`.
 
 `rendered.references` describes the labels declared by the current document.
-Each entry contains the label, default local fragment, final display title, and
-the normalized source range of its `::label` declaration. Heading targets use
-the final heading number, including a `headingNumbers` override. This lets a
-host build a publication index before a final render with `referenceTargets`.
+Each entry contains the label, default local fragment, final display title,
+target `kind`, optional `number`, and the normalized source range of its
+`::label` declaration. Heading, table, and figure targets use the final number,
+including source-offset overrides. This lets a host build a publication index
+before a final render with `referenceTargets`.
 
 The standalone validator accepts the same context:
 
@@ -317,9 +345,9 @@ Scholarmark can escape it; only add content that the host has independently
 validated to the returned tree.
 
 Both renderers accept an optional citation style (`apa`,
-`chicago-author-date`, or `ieee`) and optional heading numbers. The exported
-BibTeX, comment, and native-figure helpers are available for integrations that
-need the individual language stages.
+`chicago-author-date`, or `ieee`) and optional heading, table, and figure number
+overrides. The exported BibTeX, comment, and native-figure helpers are available
+for integrations that need the individual language stages.
 
 ### Use a CSL formatter
 

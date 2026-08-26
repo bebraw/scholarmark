@@ -36,8 +36,8 @@ See :ref[sec:citing-accuracy].
 See :ref[sec:citing-accuracy]{text="the earlier discussion"}.
 ```
 
-Without custom text, a heading reference renders the numbered title of its
-target. Use `text` to override link text, particularly for non-heading targets:
+Without custom text, heading, captioned-table, and native-figure references
+render the numbered title of their target. Use `text` to override link text:
 
 ```markdown
 | Method | Result |
@@ -46,13 +46,16 @@ target. Use `text` to override link text, particularly for non-heading targets:
 ::caption[Results by experimental method.]
 ::label[table:methods]
 
-The results appear in :ref[table:methods]{text="the methods table"}.
+The results appear in :ref[table:methods].
+Compare :ref[table:methods]{text="the methods table"} with the appendix.
 ```
 
 A table caption uses the same `::caption[...]` spelling as a native figure
 caption, but follows the complete GFM table. If present, the table's label
 follows its caption. A caption anywhere else must be inside a supported figure
-container.
+container. Captioned tables and valid native figures use independent numbered
+sequences. Their postfix labels render directly as the `id` of the `<table>` or
+`<figure>`.
 
 Labels may use familiar LaTeX-style keys containing letters, numbers, colons,
 underscores, and hyphens. Duplicate, invalid, and unattached labels fail

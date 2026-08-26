@@ -51,8 +51,9 @@ second Markdown dialect.
   title through lower-level sections.
 - Level-one headings are supported as ordinary Markdown document titles.
 - GFM tables, strikethrough, task lists, autolinks, and footnotes.
-- A postfix `::caption[text]` on a GFM table renders as its sanitized HTML
-  caption. An optional table label follows the caption.
+- A postfix `::caption[text]` on a GFM table renders as its numbered, sanitized
+  HTML caption. An optional table label follows the caption and becomes the
+  table element's `id`.
 - YAML and TOML frontmatter is parsed but not rendered in the preview.
 - A `%` as the first non-whitespace character comments out its physical source
   line without splitting a surrounding prose paragraph. `\%` escapes a literal
@@ -63,13 +64,17 @@ second Markdown dialect.
   the block. Markers in frontmatter and fenced code remain literal. An unclosed
   block diagnoses and keeps the remaining source out of the preview.
 - Level-two and level-three headings receive generated section numbers.
+- Captioned tables and valid native figures receive independent source-ordered
+  numbers. Hosts may replace numbers by source offset, and render results expose
+  the final caption, number, label, kind, and source range as metadata.
 - Level-four headings render as unnumbered paragraph labels.
 - `::label[id]` follows the Markdown block it labels and creates its reference
   target.
-- `:ref[id]` resolves labels and accepts optional custom `text`.
+- `:ref[id]` resolves labels and accepts optional custom `text`. Labelled
+  captioned tables and figures default to `Table N` and `Figure N` respectively.
 - Hosts may provide publication-wide reference targets when rendering or
   diagnosing separately stored documents. Host targets take precedence over
-  same-named local labels and retain the authored label as inert rendered data.
+  same-named local labels without changing the local label's rendered attachment.
 - Render results expose local labels with their final title, default fragment,
   and normalized declaration range for publication indexing.
 - `:cite` accepts multiple ids, `parenthetical`, `textual`, and `full` modes,
@@ -140,6 +145,8 @@ second Markdown dialect.
 - [x] Rendered citation buttons retain sanitized locator data for local PDF-page
       navigation without exposing project-only evidence identities.
 - [x] Labels on headings and non-heading blocks resolve with custom reference text.
+- [x] Captioned tables and valid native figures render independent numbers,
+      direct semantic-element ids, numbered reference titles, and structured metadata.
 - [x] An explicit bibliography marker renders cited references in preview and
       publication outputs without printing directive syntax.
 - [x] Portable block comments remain visible in source and absent from preview

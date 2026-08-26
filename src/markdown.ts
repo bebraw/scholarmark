@@ -53,6 +53,7 @@ export interface RenderedDocument {
   diagnostics: Diagnostic[];
   headings: RenderedHeading[];
   references: RenderedReferenceTarget[];
+  captionedBlocks: RenderedCaptionedBlock[];
 }
 
 export interface RenderedTreeDocument {
@@ -60,6 +61,7 @@ export interface RenderedTreeDocument {
   diagnostics: Diagnostic[];
   headings: RenderedHeading[];
   references: RenderedReferenceTarget[];
+  captionedBlocks: RenderedCaptionedBlock[];
 }
 
 export interface RenderedHeading {
@@ -75,11 +77,23 @@ export interface RenderedReferenceTarget {
   readonly label: string;
   readonly title: string;
   readonly fragment: string;
+  readonly kind?: "heading" | "table" | "figure" | "paragraph";
+  readonly number?: string;
   readonly from: number;
   readonly to: number;
 }
 
 export type HeadingNumbers = Readonly<Record<number, string>>;
+export type BlockNumbers = Readonly<Record<number, string>>;
+
+export interface RenderedCaptionedBlock {
+  readonly kind: "table" | "figure";
+  readonly id?: string;
+  readonly number: string;
+  readonly caption: string;
+  readonly from: number;
+  readonly to: number;
+}
 
 export interface ReferenceTarget {
   /** Default visible text when a reference does not provide custom text. */
@@ -96,6 +110,8 @@ export interface DiagnoseOptions {
 
 export interface MarkdownRenderOptions {
   readonly headingNumbers?: HeadingNumbers;
+  readonly tableNumbers?: BlockNumbers;
+  readonly figureNumbers?: BlockNumbers;
   /** Override parsing of BibTeX bibliography text, for example with the optional Citation.js adapter. */
   readonly parseBibliography?: BibliographyParser;
   /** Override citation and bibliography text formatting, for example with a host-installed CSL processor. */
@@ -110,7 +126,7 @@ export interface SyncMarkdownRenderOptions extends Omit<MarkdownRenderOptions, "
 
 /** Validate a document using the same syntax and native-figure rules as rendering. */
 export function diagnose(source: string, bibliography: BibliographyInput = "", options: DiagnoseOptions = {}): Diagnostic[] {
-  const prepared = prepareRender(source, bibliography, options.referenceTargets, {}, options.parseBibliography);
+  const prepared = prepareRender(source, bibliography, options.referenceTargets, {}, {}, {}, options.parseBibliography);
   return [...prepared.diagnostics, ...validateNativeFigureSyntax(projectMarkdownSemantics(prepared.normalized))].sort(
     (left, right) => left.from - right.from,
   );
@@ -203,6 +219,7 @@ const previewSchema: Schema = {
     text: ["className", "id", "x", "y"],
     title: ["id"],
     span: ["ariaLabel", "className", "dataCitation", "id"],
+    table: ["id"],
     td: [["style", safeTableAlignmentPattern]],
     th: [["style", safeTableAlignmentPattern]],
     ul: ["className"],
@@ -226,6 +243,7 @@ export async function render(
     diagnostics: rendered.diagnostics,
     headings: rendered.headings,
     references: rendered.references,
+    captionedBlocks: rendered.captionedBlocks,
   };
 }
 
@@ -242,6 +260,7 @@ export function renderSync(
     diagnostics: rendered.diagnostics,
     headings: rendered.headings,
     references: rendered.references,
+    captionedBlocks: rendered.captionedBlocks,
   };
 }
 
@@ -252,7 +271,15 @@ export async function renderTree(
   citationStyle: CitationStyle = "apa",
   options: MarkdownRenderOptions = {},
 ): Promise<RenderedTreeDocument> {
-  const prepared = prepareRender(source, bibliography, options.referenceTargets, options.headingNumbers, options.parseBibliography);
+  const prepared = prepareRender(
+    source,
+    bibliography,
+    options.referenceTargets,
+    options.headingNumbers,
+    options.tableNumbers,
+    options.figureNumbers,
+    options.parseBibliography,
+  );
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
@@ -270,7 +297,15 @@ export function renderTreeSync(
   citationStyle: CitationStyle = "apa",
   options: SyncMarkdownRenderOptions = {},
 ): RenderedTreeDocument {
-  const prepared = prepareRender(source, bibliography, options.referenceTargets, options.headingNumbers, options.parseBibliography);
+  const prepared = prepareRender(
+    source,
+    bibliography,
+    options.referenceTargets,
+    options.headingNumbers,
+    options.tableNumbers,
+    options.figureNumbers,
+    options.parseBibliography,
+  );
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
@@ -292,6 +327,7 @@ interface PreparedRender {
   readonly citedIds: ReadonlySet<string>;
   readonly references: Map<string, ReferenceEntry>;
   readonly localReferences: LocalReferenceEntry[];
+  readonly captionedBlocks: CaptionedBlockEntry[];
   readonly diagnostics: Diagnostic[];
 }
 
@@ -301,6 +337,12 @@ interface LocalReferenceEntry extends ReferenceEntry {
   readonly from: number;
   readonly to: number;
   readonly attachedFrom: number;
+  readonly kind?: "heading" | "table" | "figure" | "paragraph";
+  readonly number?: string;
+}
+
+interface CaptionedBlockEntry extends RenderedCaptionedBlock {
+  readonly labelFrom?: number;
 }
 
 function prepareRender(
@@ -308,6 +350,8 @@ function prepareRender(
   bibliographyInput: BibliographyInput,
   referenceTargets: ReadonlyMap<string, ReferenceTarget> = new Map(),
   headingNumbers: HeadingNumbers = {},
+  tableNumbers: BlockNumbers = {},
+  figureNumbers: BlockNumbers = {},
   parseBibliography?: BibliographyParser,
 ): PreparedRender {
   const normalized = source.replaceAll("\r\n", "\n");
@@ -315,7 +359,8 @@ function prepareRender(
   const semanticSource = projectMarkdownSemantics(normalized);
   const bibliography = bibliographyEntries(bibliographyInput, parseBibliography);
   const citedIds = collectCitationIds(semanticSource);
-  const { references, localReferences } = collectReferences(semanticSource, headingNumbers);
+  const captionedBlocks = collectCaptionedBlocks(semanticSource, tableNumbers, figureNumbers);
+  const { references, localReferences } = collectReferences(semanticSource, headingNumbers, captionedBlocks);
   for (const [label, target] of referenceTargets) references.set(label, target);
   const diagnostics = [
     ...(comments.unclosedFrom === null
@@ -330,7 +375,15 @@ function prepareRender(
         ]),
     ...validateSyntax(semanticSource, bibliography, references),
   ];
-  return { normalized, bibliography, citedIds, references, localReferences, diagnostics };
+  return {
+    normalized,
+    bibliography,
+    citedIds,
+    references,
+    localReferences,
+    captionedBlocks,
+    diagnostics,
+  };
 }
 
 function markdownProcessor(
@@ -356,6 +409,7 @@ function markdownProcessor(
     })
     .use(remarkRehype)
     .use(attachTableCaptions)
+    .use(renderCaptionedBlocks, { captionedBlocks: prepared.captionedBlocks })
     .use(annotatePreviewSourcePositions)
     .use(renderNumberedHeadings, { headingNumbers: options.headingNumbers, headings })
     .use(normalizeTableAlignment)
@@ -368,6 +422,7 @@ function completeTreeRender(prepared: PreparedRender, tree: HastRoot, headings: 
     diagnostics: prepared.diagnostics.sort((left, right) => left.from - right.from),
     headings,
     references: renderedReferenceTargets(prepared.localReferences, headings),
+    captionedBlocks: prepared.captionedBlocks.map(toRenderedCaptionedBlock),
   };
 }
 
@@ -402,6 +457,7 @@ function failedTreeRender(prepared: PreparedRender, error: unknown): RenderedTre
     ],
     headings: [],
     references: [],
+    captionedBlocks: [],
   };
 }
 
@@ -418,6 +474,100 @@ export function headingNumbersByOffset(source: string): HeadingNumbers {
     numbers[offset] = getHeadingNumber(`h${node.depth}`, counters);
   });
   return numbers;
+}
+
+export function tableNumbersByOffset(source: string): BlockNumbers {
+  return captionedBlockNumbersByOffset(source, "table");
+}
+
+export function figureNumbersByOffset(source: string): BlockNumbers {
+  return captionedBlockNumbersByOffset(source, "figure");
+}
+
+function captionedBlockNumbersByOffset(source: string, kind: "table" | "figure"): BlockNumbers {
+  const normalized = source.replaceAll("\r\n", "\n");
+  const semanticSource = projectMarkdownSemantics(normalized);
+  const numbers: Record<number, string> = {};
+  let counter = 0;
+  for (const block of captionedBlockSources(semanticSource)) {
+    if (block.kind !== kind) continue;
+    counter += 1;
+    numbers[block.from] = String(counter);
+  }
+  return numbers;
+}
+
+interface CaptionedBlockSource {
+  readonly kind: "table" | "figure";
+  readonly caption: string;
+  readonly from: number;
+  readonly to: number;
+}
+
+function captionedBlockSources(source: string): CaptionedBlockSource[] {
+  const blocks: CaptionedBlockSource[] = [];
+  const tree = parseMarkdown(source);
+  visit(tree, (node, index, parent) => {
+    if (node.type === "table" && index !== undefined && parent) {
+      const caption = parent.children[index + 1];
+      const from = node.position?.start.offset;
+      const to = node.position?.end.offset;
+      if (caption && isCaptionDirective(caption as MdastRootContent) && from !== undefined && to !== undefined) {
+        blocks.push({
+          kind: "table",
+          caption: directiveContent(caption as Directives, source),
+          from,
+          to,
+        });
+      }
+      return;
+    }
+    if (node.type !== "containerDirective" || node.name.toLocaleLowerCase() !== "figure") return;
+    const parsed = parseNativeFigure(node);
+    const from = node.position?.start.offset;
+    const to = node.position?.end.offset;
+    if (parsed.figure && from !== undefined && to !== undefined) {
+      blocks.push({ kind: "figure", caption: parsed.figure.caption, from, to });
+    }
+    return [SKIP];
+  });
+  return blocks.sort((left, right) => left.from - right.from);
+}
+
+function collectCaptionedBlocks(source: string, tableNumbers: BlockNumbers, figureNumbers: BlockNumbers): CaptionedBlockEntry[] {
+  const tree = parseMarkdown(source);
+  const attachments = labelAttachments(tree);
+  const labelsByBlockOffset = new Map<number, { readonly id: string; readonly labelFrom: number }>();
+  for (const label of source.matchAll(labelPattern)) {
+    const labelFrom = label.index ?? 0;
+    const attachedFrom = attachments.get(labelFrom)?.position?.start.offset;
+    const id = label[1]?.trim() ?? "";
+    if (id && attachedFrom !== undefined) labelsByBlockOffset.set(attachedFrom, { id, labelFrom });
+  }
+
+  const counters = { table: 0, figure: 0 };
+  return captionedBlockSources(source).map((block) => {
+    counters[block.kind] += 1;
+    const generatedNumber = String(counters[block.kind]);
+    const number = (block.kind === "table" ? tableNumbers : figureNumbers)[block.from] ?? generatedNumber;
+    const label = labelsByBlockOffset.get(block.from);
+    return {
+      ...block,
+      number,
+      ...(label ? { id: label.id, labelFrom: label.labelFrom } : {}),
+    };
+  });
+}
+
+function toRenderedCaptionedBlock(block: CaptionedBlockEntry): RenderedCaptionedBlock {
+  return {
+    kind: block.kind,
+    ...(block.id ? { id: block.id } : {}),
+    number: block.number,
+    caption: block.caption,
+    from: block.from,
+    to: block.to,
+  };
 }
 
 function annotatePreviewSourcePositions() {
@@ -729,6 +879,62 @@ function moveTableCaptions(parent: HastRoot | HastElement): void {
   }
 }
 
+interface CaptionedBlockRenderOptions {
+  readonly captionedBlocks: readonly CaptionedBlockEntry[];
+}
+
+function renderCaptionedBlocks({ captionedBlocks }: CaptionedBlockRenderOptions) {
+  return (tree: HastRoot): void => {
+    const blocksByOffset = new Map(captionedBlocks.map((block) => [`${block.kind}:${block.from}`, block]));
+    visit(tree, "element", (node: HastElement) => {
+      const kind = node.tagName === "table" ? "table" : node.tagName === "figure" ? "figure" : undefined;
+      const from = node.position?.start.offset;
+      if (!kind || from === undefined) return;
+      const block = blocksByOffset.get(`${kind}:${from}`);
+      if (!block) return;
+      if (block.id) node.properties.id = block.id;
+      const captionTag = kind === "table" ? "caption" : "figcaption";
+      const caption = node.children.find((child): child is HastElement => child.type === "element" && child.tagName === captionTag);
+      if (!caption) return;
+      caption.properties.className = [`semantic-${kind}-caption`];
+      caption.children.unshift(
+        {
+          type: "element",
+          tagName: "span",
+          properties: { className: [`semantic-${kind}-number`] },
+          children: [
+            {
+              type: "text",
+              value: `${kind === "table" ? "Table" : "Figure"} ${block.number}.`,
+            },
+          ],
+        },
+        { type: "text", value: " " },
+      );
+    });
+    removeDirectCaptionedBlockLabels(
+      tree,
+      new Set(captionedBlocks.flatMap((block) => (block.labelFrom === undefined ? [] : [block.labelFrom]))),
+    );
+  };
+}
+
+function removeDirectCaptionedBlockLabels(parent: HastRoot | HastElement, labelOffsets: ReadonlySet<number>): void {
+  for (let index = 0; index < parent.children.length; index += 1) {
+    const child = parent.children[index];
+    if (child?.type !== "element") continue;
+    const from = child.position?.start.offset;
+    const className = child.properties.className;
+    const isSemanticLabel = Array.isArray(className) && className.includes("semantic-label");
+    if (child.tagName === "span" && isSemanticLabel && from !== undefined && labelOffsets.has(from)) {
+      parent.children.splice(index, 1);
+      index -= 1;
+      continue;
+    }
+    removeDirectCaptionedBlockLabels(child, labelOffsets);
+  }
+}
+
 interface NumberedHeadingOptions {
   headingNumbers?: HeadingNumbers;
   headings: RenderedHeading[];
@@ -865,11 +1071,16 @@ function hastText(node: HastRoot | HastRootContent): string {
 function collectReferences(
   source: string,
   headingNumbers: HeadingNumbers,
-): { references: Map<string, ReferenceEntry>; localReferences: LocalReferenceEntry[] } {
+  captionedBlocks: readonly CaptionedBlockEntry[],
+): {
+  references: Map<string, ReferenceEntry>;
+  localReferences: LocalReferenceEntry[];
+} {
   const references = new Map<string, ReferenceEntry>();
   const localReferences: LocalReferenceEntry[] = [];
   const counters = { h2: 0, h3: 0 };
-  const headingsByOffset = new Map<number, string>();
+  const headingsByOffset = new Map<number, { readonly title: string; readonly number?: string }>();
+  const captionedBlocksByOffset = new Map(captionedBlocks.map((block) => [block.from, block]));
   const tree = parseMarkdown(source);
   const attachments = labelAttachments(tree);
   visit(tree, "heading", (heading: Heading) => {
@@ -878,7 +1089,11 @@ function collectReferences(
     const level = `h${heading.depth}`;
     const generatedNumber = level === "h2" || level === "h3" ? getHeadingNumber(level, counters) : "";
     const number = headingNumbers[offset] ?? generatedNumber;
-    headingsByOffset.set(offset, [number, mdastText(heading).trim()].filter(Boolean).join(" "));
+    const title = mdastText(heading).trim();
+    headingsByOffset.set(offset, {
+      title: [number, title].filter(Boolean).join(" "),
+      ...(number ? { number } : {}),
+    });
   });
   for (const label of source.matchAll(labelPattern)) {
     const target = label[1]?.trim() ?? "";
@@ -887,14 +1102,22 @@ function collectReferences(
     const attachedBlock = attachments.get(from);
     const attachedFrom = attachedBlock?.position?.start.offset;
     if (target && attachedFrom !== undefined && !references.has(target)) {
+      const heading = headingsByOffset.get(attachedFrom);
+      const captionedBlock = captionedBlocksByOffset.get(attachedFrom);
+      const kind = referenceKind(attachedBlock, heading !== undefined, captionedBlock);
+      const number = heading?.number ?? captionedBlock?.number;
       const reference = {
         label: target,
-        title: headingsByOffset.get(attachedFrom) ?? target,
+        title: captionedBlock
+          ? `${captionedBlock.kind === "table" ? "Table" : "Figure"} ${captionedBlock.number}`
+          : (heading?.title ?? target),
         href: `#${target}`,
         fragment: target,
         from,
         to,
         attachedFrom,
+        ...(kind ? { kind } : {}),
+        ...(number ? { number } : {}),
       } satisfies LocalReferenceEntry;
       references.set(target, reference);
       localReferences.push(reference);
@@ -910,6 +1133,19 @@ function parseMarkdown(source: string): MdastRoot {
     .use(remarkFrontmatter, ["yaml", "toml"])
     .use(remarkDirective)
     .parse(source) as MdastRoot;
+}
+
+function referenceKind(
+  target: MdastRootContent | undefined,
+  isHeading: boolean,
+  captionedBlock: CaptionedBlockEntry | undefined,
+): RenderedReferenceTarget["kind"] {
+  if (isHeading) return "heading";
+  if (captionedBlock) return captionedBlock.kind;
+  if (target?.type === "table") return "table";
+  if (target?.type === "paragraph") return "paragraph";
+  if (target?.type === "containerDirective" && target.name.toLocaleLowerCase() === "figure") return "figure";
+  return undefined;
 }
 
 function labelAttachments(tree: MdastRoot): ReadonlyMap<number, MdastRootContent> {
@@ -948,6 +1184,8 @@ function renderedReferenceTargets(
       label: reference.label,
       title: heading ? `${heading.number} ${heading.title}` : reference.title,
       fragment: reference.fragment,
+      ...(reference.kind ? { kind: reference.kind } : {}),
+      ...(heading ? { number: heading.number } : reference.number ? { number: reference.number } : {}),
       from: reference.from,
       to: reference.to,
     };

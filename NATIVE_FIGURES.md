@@ -35,8 +35,10 @@ compatibility.
 - Parsing produces a typed versioned figure model before rendering.
 - Valid boxplots render to deterministic inline SVG using one shared scale across
   their five-number summaries.
-- The SVG exposes a title and visible caption and remains understandable without
-  color.
+- The SVG exposes a title and visible numbered caption and remains understandable
+  without color. Figure numbering is independent from table numbering.
+- A postfix label becomes the rendered `<figure>` element's `id`, and an
+  uncustomized semantic reference uses `Figure N` as its text.
 - Authored data can become escaped text or finite geometry only. It cannot set
   element names, arbitrary attributes, class names, styles, links, or URLs.
 - Preview sanitization runs after figure rendering and admits only the fixed SVG
