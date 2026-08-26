@@ -40,7 +40,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/bebraw/scholarmark.git"
+    "url": "git+https://github.com/bebraw/scholarmark.git"
   },
   "scripts": {
     "build": "npm run build:library && npm run build:vscode",
