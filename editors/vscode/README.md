@@ -6,7 +6,7 @@ to ordinary Markdown files.
 ## Features
 
 - Theme-aware highlighting for portable comments and Scholarmark directives
-- Diagnostics for citations, labels, references, bibliography markers, and figures
+- Diagnostics for citations, labels, references, bibliography markers, figures, and disclosures
 - Label and citation completion
 - Go to definition for labels and BibTeX citation keys
 - Hover information, document symbols, folding, references, and label rename

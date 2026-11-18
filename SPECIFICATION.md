@@ -51,6 +51,11 @@ second Markdown dialect.
   title through lower-level sections.
 - Level-one headings are supported as ordinary Markdown document titles.
 - GFM tables, strikethrough, task lists, autolinks, and footnotes.
+- `:::details[Title]` encloses supplementary Markdown in a closed native HTML
+  disclosure. It requires a plain-text title, a nonempty body and an explicit
+  closing fence. The renderer supplies the `details` and `summary` elements;
+  authored attributes are not accepted. The body retains its normal document
+  semantics and source positions for use by interactive and print hosts.
 - A postfix `::caption[text]` on a GFM table renders as its numbered, sanitized
   HTML caption. An optional table label follows the caption and becomes the
   table element's `id`.

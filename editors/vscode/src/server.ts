@@ -311,6 +311,7 @@ const leafDirectiveCompletions: CompletionItem[] = [
 ];
 
 const containerDirectiveCompletions: CompletionItem[] = [
+  { label: ":::details", detail: "Collapsible details", kind: CompletionItemKind.Snippet, insertText: "details[${1:Title}]\n${2:Body}\n:::", insertTextFormat: InsertTextFormat.Snippet },
   { label: "::: comment", detail: "Portable comment block", kind: CompletionItemKind.Snippet, insertText: " comment\n${1:Comment}\n:::", insertTextFormat: InsertTextFormat.Snippet },
   { label: ":::figure", detail: "Native figure", kind: CompletionItemKind.Snippet, insertText: "figure{kind=\"boxplot\" version=1}\n${1}\n:::", insertTextFormat: InsertTextFormat.Snippet },
 ];

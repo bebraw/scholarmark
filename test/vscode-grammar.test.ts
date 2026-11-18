@@ -40,6 +40,15 @@ describe("VS Code TextMate grammar", () => {
     }
   });
 
+  it("highlights a disclosure title while leaving the body in Markdown", () => {
+    const opener = grammar.tokenizeLine(":::details[Worked example]", INITIAL);
+    expect(opener.tokens.find((token) => token.startIndex === 3)?.scopes).toContain("support.function.directive.scholarmark");
+    expect(opener.tokens.find((token) => token.startIndex === 11)?.scopes).toContain("entity.name.label.scholarmark");
+
+    const body = grammar.tokenizeLine("See :ref[method].", opener.ruleStack);
+    expect(body.tokens.flatMap((token) => token.scopes)).toContain("support.function.directive.scholarmark");
+  });
+
   it("scopes whole-line comments but not escaped leading percentages", () => {
     const comment = grammar.tokenizeLine("  % Review this sentence.", INITIAL);
     expect(comment.tokens.some((token) => token.scopes.includes("comment.line.percentage.scholarmark"))).toBe(true);

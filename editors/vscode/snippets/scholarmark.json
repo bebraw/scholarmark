@@ -29,6 +29,11 @@
     "body": ["::caption[${1:Caption}]", "${0}"],
     "description": "Caption the preceding Markdown table"
   },
+  "Scholarmark details": {
+    "prefix": "sm-details",
+    "body": [":::details[${1:Title}]", "${2:Body}", ":::", "${0}"],
+    "description": "Insert a disclosure with a plain-text title and Markdown body"
+  },
   "Scholarmark boxplot": {
     "prefix": "sm-boxplot",
     "body": [
