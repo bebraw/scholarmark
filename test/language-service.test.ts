@@ -126,6 +126,8 @@ See :ref[table:results]{text="the results table"}.`;
   it("activates diagnostics only for documents using recognized syntax", () => {
     expect(isScholarmarkDocument("Ordinary Markdown with a value=assignment.")).toBe(false);
     expect(isScholarmarkDocument("```markdown\n:cite[example]\n```")).toBe(false);
+    expect(isScholarmarkDocument(":::details[Derivation]\nSee the proof.\n:::")).toBe(true);
+    expect(isScholarmarkDocument("```md\n:::details[Example]\n:::\n```")).toBe(false);
     expect(isScholarmarkDocument("Evidence :cite[example].")).toBe(true);
     expect(isScholarmarkDocument("::: comment\nReview this.\n:::")).toBe(true);
     expect(isScholarmarkDocument("% Review this sentence.")).toBe(true);

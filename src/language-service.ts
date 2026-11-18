@@ -50,7 +50,7 @@ const containerClosingPattern = /^[ \t]*:::[ \t]*$/gmu;
 
 export function isScholarmarkDocument(source: string): boolean {
   if (projectMarkdownComments(source).ranges.length > 0) return true;
-  return /(?:^|\n)[ \t]*::(?:label|bibliography|box|caption)\[|(?:^|\n)[ \t]*:::[ \t]*figure\b|(?<!:):(?:cite|citet|citep|ref)\[/imu.test(
+  return /(?:^|\n)[ \t]*::(?:label|bibliography|box|caption)\[|(?:^|\n)[ \t]*:{3,}(?:[ \t]*figure|details)\b|(?<!:):(?:cite|citet|citep|ref)\[/imu.test(
     projectMarkdownSemantics(source),
   );
 }

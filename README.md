@@ -97,6 +97,19 @@ Place the generated list of cited references exactly where it belongs:
 ::bibliography[]
 ```
 
+### Disclosures
+
+Use a titled disclosure for supplementary material readers can open when needed:
+
+```markdown
+:::details[How was the sample selected?]
+We included trials with a complete observation window.
+:::
+```
+
+The title stays visible; the Markdown body opens on demand without JavaScript.
+See [the disclosure syntax](./SYNTAX.md#disclosures) for nesting and print guidance.
+
 ### Portable comments
 
 Comments remain in the manuscript source but are omitted from rendered output

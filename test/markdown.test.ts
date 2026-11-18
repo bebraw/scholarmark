@@ -124,6 +124,50 @@ See :ref[ch:technology] and :ref[sec:citing]{text="the LaTeX section"}.`;
     expect(rendered.html).not.toContain("javascript:");
   });
 
+  it("folds only the disclosure body and preserves its Markdown", async () => {
+    const source = "Before.\n\n:::details[Sampling & controls]\n- A **calibrated** instrument\n- A full trial\n:::\n\nAfter.";
+    const rendered = render(source, "");
+    expect(await renderAsync(source, "")).toEqual(rendered);
+    expect(rendered.diagnostics).toEqual([]);
+    expect(withoutSourcePositions(rendered.html).replace(/>\s+</gu, "><")).toBe(
+      "<p>Before.</p><details><summary>Sampling &#x26; controls</summary>" +
+      "<ul><li>A <strong>calibrated</strong> instrument</li><li>A full trial</li></ul></details><p>After.</p>",
+    );
+  });
+
+  it.each([
+    [":::details", "Readable body.", ":::"],
+    [":::details[*Formatted title*]", "Readable body.", ":::"],
+    [":::details[Title]{open}", "Readable body.", ":::"],
+    [":::details[Title]", "Readable body.", ""],
+    [":::details[Title]", "", ":::"],
+  ])("reports invalid disclosures without concealing the rest of the document", (opening, body, closing) => {
+    const source = [opening, body, closing, "", "Continue reading."].join("\n");
+    const rendered = render(source, "");
+    expect(rendered.diagnostics).toContainEqual(expect.objectContaining({ severity: "error", from: 0, to: opening.length }));
+    expect(diagnose(source)).toEqual(rendered.diagnostics);
+    expect(rendered.html).not.toMatch(/<details\b/u);
+    if (body) expect(rendered.html).toContain(body);
+    expect(rendered.html).toContain("Continue reading.");
+  });
+
+  it("keeps a block comment private without letting its fence end the disclosure", () => {
+    const source = ":::details[Method]\nBefore.\n\n::: comment\nPrivate draft.\n:::\n\nAfter.\n:::\n\nMain text.";
+    const rendered = render(source, "");
+    expect(rendered.diagnostics).toEqual([]);
+    expect(rendered.html).not.toContain("Private draft");
+    expect(rendered.html).toMatch(/<details\b[^>]*>[\s\S]*Before\.[\s\S]*After\.[\s\S]*<\/details>[\s\S]*Main text\./u);
+  });
+
+  it("resolves a reference to a heading inside nested disclosures", () => {
+    const source = "::::details[Evidence]\n:::details[Participants]\n## Sample\n::label[sec:sample]\n:::\n::::\n\nSee :ref[sec:sample].";
+    const rendered = render(source, "");
+    expect(rendered.diagnostics).toEqual([]);
+    expect(rendered.html.match(/<details\b/gu)).toHaveLength(2);
+    expect(rendered.html).toMatch(/<h2\b[^>]*>[\s\S]*?Sample<\/h2>\s*<span\b[^>]*id="sec:sample"[^>]*><\/span>\s*<\/details>/u);
+    expect(rendered.html).toMatch(/href="#sec:sample"[^>]*>1 Sample<\/a>/u);
+  });
+
   it("renders an accessible deterministic native boxplot", () => {
     const source = `:::figure{kind="boxplot" version=1 x-label="Time (ms)" y-label="Variant"}
 ::box[SSR & FCP]{min=1613 q1=1627 median=1628 q3=1632 max=1641}

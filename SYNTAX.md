@@ -100,6 +100,32 @@ A statement with supporting detail.[^detail]
 
 Do not use raw HTML to implement citations or cross-references.
 
+## Disclosures
+
+Use `:::details[Title]` for supporting material that belongs in the publication
+but need not interrupt the main text. Put a nonempty plain-text title in square
+brackets, then a Markdown body, and close the container on its own line:
+
+```markdown
+:::details[How was the sample selected?]
+We included **completed trials** that met both conditions:
+
+- The instrument was calibrated.
+- The observation window covered the full trial.
+:::
+
+The main explanation continues here.
+```
+
+HTML renders a closed native `<details>` with the title as its `<summary>`.
+Links, citations, and labels in the body work as in the surrounding text.
+For a nested container, use a longer fence for the outer disclosure (for
+example, four colons around a three-colon block). No attributes are accepted.
+An invalid disclosure reports an error and leaves its content visible.
+
+For print or other noninteractive output, keep the title and body together.
+A host printing the HTML can open its `details` elements before printing.
+
 ## Comments
 
 A `%` as the first non-whitespace character comments out that physical source

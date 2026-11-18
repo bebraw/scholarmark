@@ -1,6 +1,6 @@
 import type { Element as HastElement, ElementContent as HastElementContent, Root as HastRoot, RootContent as HastRootContent } from "hast";
 import type { Schema } from "hast-util-sanitize";
-import type { Directives } from "mdast-util-directive";
+import type { ContainerDirective, Directives } from "mdast-util-directive";
 import type { Heading, Html, Root as MdastRoot, RootContent as MdastRootContent } from "mdast";
 import type { Node, Parent } from "unist";
 import rehypeSanitize from "rehype-sanitize";
@@ -25,6 +25,7 @@ import {
 import type { CitationStyle } from "./types.js";
 import { projectMarkdownComments, projectMarkdownSemantics, type MarkdownCommentRange } from "./markdown-comments.js";
 import { parseNativeFigure, renderNativeFigure } from "./native-figures.js";
+import { parseDisclosure } from "./disclosure.js";
 
 export interface Diagnostic {
   severity: "error" | "warning";
@@ -124,10 +125,10 @@ export interface SyncMarkdownRenderOptions extends Omit<MarkdownRenderOptions, "
   readonly citationFormatter?: SyncCitationFormatter;
 }
 
-/** Validate a document using the same syntax and native-figure rules as rendering. */
+/** Validate a document using the same syntax and block-directive rules as rendering. */
 export function diagnose(source: string, bibliography: BibliographyInput = "", options: DiagnoseOptions = {}): Diagnostic[] {
   const prepared = prepareRender(source, bibliography, options.referenceTargets, {}, {}, {}, options.parseBibliography);
-  return [...prepared.diagnostics, ...validateNativeFigureSyntax(projectMarkdownSemantics(prepared.normalized))].sort(
+  return [...prepared.diagnostics, ...validateBlockDirectives(prepared.commentMaskedSource)].sort(
     (left, right) => left.from - right.from,
   );
 }
@@ -148,6 +149,7 @@ const safeElements = [
   "caption",
   "code",
   "del",
+  "details",
   "em",
   "figcaption",
   "figure",
@@ -168,6 +170,7 @@ const safeElements = [
   "svg",
   "span",
   "strong",
+  "summary",
   "sup",
   "table",
   "tbody",
@@ -283,7 +286,7 @@ export async function renderTree(
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
-    const tree = (await processor.run(processor.parse(prepared.normalized), prepared.normalized)) as HastRoot;
+    const tree = (await processor.run(processor.parse(prepared.parseSource), prepared.normalized)) as HastRoot;
     return completeTreeRender(prepared, tree, headings);
   } catch (error) {
     return failedTreeRender(prepared, error);
@@ -309,7 +312,7 @@ export function renderTreeSync(
   const headings: RenderedHeading[] = [];
   try {
     const processor = markdownProcessor(prepared, citationStyle, options, headings);
-    const tree = processor.runSync(processor.parse(prepared.normalized), prepared.normalized) as HastRoot;
+    const tree = processor.runSync(processor.parse(prepared.parseSource), prepared.normalized) as HastRoot;
     return completeTreeRender(prepared, tree, headings);
   } catch (error) {
     return failedTreeRender(prepared, error);
@@ -323,6 +326,8 @@ export function toHtml(tree: HastRoot): string {
 
 interface PreparedRender {
   readonly normalized: string;
+  readonly parseSource: string;
+  readonly commentMaskedSource: string;
   readonly bibliography: Map<string, BibliographyEntry>;
   readonly citedIds: ReadonlySet<string>;
   readonly references: Map<string, ReferenceEntry>;
@@ -377,6 +382,8 @@ function prepareRender(
   ];
   return {
     normalized,
+    parseSource: disclosureParseSource(normalized, comments),
+    commentMaskedSource: comments.masked,
     bibliography,
     citedIds,
     references,
@@ -384,6 +391,21 @@ function prepareRender(
     captionedBlocks,
     diagnostics,
   };
+}
+
+function disclosureParseSource(normalized: string, comments: ReturnType<typeof projectMarkdownComments>): string {
+  if (!comments.ranges.length || !/:{3,}details\b/iu.test(normalized)) return normalized;
+  // Mask block comments before remark parses containers: a comment's closing
+  // ::: must not close an enclosing disclosure. Keep % lines for the existing
+  // paragraph-preserving comment transform. Offsets stay in normalized source.
+  const chunks: string[] = [];
+  let cursor = 0;
+  for (const { from, to } of comments.ranges) {
+    if (!normalized.slice(from, to).trimStart().startsWith(":::")) continue;
+    chunks.push(normalized.slice(cursor, from), comments.masked.slice(from, to));
+    cursor = to;
+  }
+  return chunks.length ? chunks.join("") + normalized.slice(cursor) : normalized;
 }
 
 function markdownProcessor(
@@ -398,8 +420,8 @@ function markdownProcessor(
     .use(remarkFrontmatter, ["yaml", "toml"])
     .use(remarkDirective)
     .use(removeMarkdownComments)
-    .use(escapeAuthoredHtml)
     .use(renderSemanticDirectives, {
+      commentMaskedSource: prepared.commentMaskedSource,
       bibliography: prepared.bibliography,
       citedIds: prepared.citedIds,
       references: prepared.references,
@@ -407,6 +429,7 @@ function markdownProcessor(
       citationFormatter: options.citationFormatter ?? defaultCitationFormatter,
       diagnostics: prepared.diagnostics,
     })
+    .use(escapeAuthoredHtml)
     .use(remarkRehype)
     .use(attachTableCaptions)
     .use(renderCaptionedBlocks, { captionedBlocks: prepared.captionedBlocks })
@@ -651,6 +674,7 @@ function escapeAuthoredHtml() {
 }
 
 interface SemanticOptions {
+  readonly commentMaskedSource: string;
   bibliography: Map<string, BibliographyEntry>;
   citedIds: ReadonlySet<string>;
   references: Map<string, ReferenceEntry>;
@@ -667,8 +691,23 @@ function renderSemanticDirectives(options: SemanticOptions) {
       if (node.type !== "textDirective" && node.type !== "leafDirective" && node.type !== "containerDirective") return;
       if (index === undefined || !parent) return;
       const directive: Directives = node;
-      const content = directiveContent(directive, source);
       const directiveName = directive.name.toLocaleLowerCase();
+      if (directive.type === "containerDirective" && directiveName === "details") {
+        const parsed = parseDisclosure(directive, options.commentMaskedSource);
+        if (parsed.error) {
+          options.diagnostics.push(parsed.error);
+          // Keep the offending opener and the body readable, without passing
+          // authored attributes to the DOM or exposing author-only comments.
+          const hasLabel = directive.children[0]?.type === "paragraph" && directive.children[0].data?.directiveLabel;
+          directive.children.splice(0, hasLabel ? 1 : 0, { type: "code", value: source.slice(parsed.error.from, parsed.error.to) });
+          directive.data = { hName: "section" };
+        } else {
+          parsed.summary.data = { ...parsed.summary.data, hName: "summary" };
+          directive.data = { hName: "details" };
+        }
+        return; // Descend into the original Markdown body for citations, refs, and other directives.
+      }
+      const content = directiveContent(directive, source);
       if (directive.type === "containerDirective" && directiveName === "figure") {
         const parsed = parseNativeFigure(directive);
         if (parsed.figure) {
@@ -817,13 +856,18 @@ function renderSemanticDirectives(options: SemanticOptions) {
   };
 }
 
-function validateNativeFigureSyntax(source: string): Diagnostic[] {
+function validateBlockDirectives(source: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const tree = unified().use(remarkParse).use(remarkGfm).use(remarkFrontmatter, ["yaml", "toml"]).use(remarkDirective).parse(source);
   visit(tree, (node, index, parent) => {
     if (node.type !== "leafDirective" && node.type !== "containerDirective") return;
     const directive: Directives = node;
     const name = directive.name.toLocaleLowerCase();
+    if (directive.type === "containerDirective" && name === "details") {
+      const parsed = parseDisclosure(directive, source);
+      if (parsed.error) diagnostics.push(parsed.error);
+      return;
+    }
     if (directive.type === "containerDirective" && name === "figure") {
       const parsed = parseNativeFigure(directive);
       diagnostics.push(
@@ -1150,13 +1194,17 @@ function referenceKind(
 
 function labelAttachments(tree: MdastRoot): ReadonlyMap<number, MdastRootContent> {
   const attachments = new Map<number, MdastRootContent>();
-  for (const [index, node] of tree.children.entries()) {
-    if (!isLabelDirective(node)) continue;
-    const from = node.position?.start.offset;
-    const previous = tree.children[index - 1];
-    const target = previous && isCaptionDirective(previous) && isTableCaption(index - 1, tree) ? tree.children[index - 2] : previous;
-    if (from !== undefined && target && isLabelTarget(target)) attachments.set(from, target);
-  }
+  const collect = (parent: MdastRoot | ContainerDirective): void => {
+    for (const [index, node] of parent.children.entries()) {
+      if (node.type === "containerDirective" && node.name.toLowerCase() === "details") collect(node);
+      if (!isLabelDirective(node)) continue;
+      const from = node.position?.start.offset;
+      const previous = parent.children[index - 1];
+      const target = previous && isCaptionDirective(previous) && isTableCaption(index - 1, parent) ? parent.children[index - 2] : previous;
+      if (from !== undefined && target && isLabelTarget(target)) attachments.set(from, target);
+    }
+  };
+  collect(tree);
   return attachments;
 }
 
@@ -1169,6 +1217,7 @@ function isCaptionDirective(node: MdastRootContent): boolean {
 }
 
 function isLabelTarget(node: MdastRootContent): boolean {
+  if (node.type === "paragraph" && node.data?.directiveLabel) return false;
   const type = String(node.type);
   return type !== "definition" && type !== "yaml" && type !== "toml" && !isLabelDirective(node);
 }
@@ -1233,7 +1282,13 @@ function validateSyntax(
 function validateReferenceDeclarations(source: string): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const declarations: Array<{ target: string; match: RegExpMatchArray }> = [];
-  const attachments = labelAttachments(parseMarkdown(source));
+  const tree = parseMarkdown(source);
+  const attachments = labelAttachments(tree);
+  const disclosureOpeners = new Set<number>();
+  visit(tree, "containerDirective", (node) => {
+    const from = node.position?.start.offset;
+    if (node.name.toLowerCase() === "details" && from !== undefined) disclosureOpeners.add(from);
+  });
   let bibliographyMarkers = 0;
   for (const match of source.matchAll(/^::([a-z][a-z-]*)\[([^\]]*)\](?:\{([^}]*)\})?[ \t]*$/gimu)) {
     const kind = match[1]?.toLowerCase() ?? "";
@@ -1253,9 +1308,11 @@ function validateReferenceDeclarations(source: string): Diagnostic[] {
       diagnostics.push(toDiagnostic(`Unsupported leaf directive: ::${kind}`, match));
     }
   }
-  for (const match of source.matchAll(/^:::[ \t]*([a-z][a-z-]*)\b.*$/gimu)) {
+  for (const match of source.matchAll(/^:{3,}[ \t]*([a-z][a-z-]*)\b.*$/gimu)) {
     const kind = match[1]?.toLowerCase() ?? "";
-    if (kind !== "figure") diagnostics.push(toDiagnostic(`Unsupported container directive: :::${kind}`, match));
+    if (kind === "details") {
+      if (!disclosureOpeners.has(match.index)) diagnostics.push(toDiagnostic("Malformed :::details opening line", match));
+    } else if (kind !== "figure") diagnostics.push(toDiagnostic(`Unsupported container directive: :::${kind}`, match));
   }
   for (const heading of source.matchAll(/^#{1,6}[ \t].*\{#[^}\r\n]+\}[ \t]*$/gmu))
     diagnostics.push(toDiagnostic("Heading ids are not supported; use ::label[id]", heading));

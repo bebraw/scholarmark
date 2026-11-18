@@ -6,7 +6,8 @@
     { "include": "#comments" },
     { "include": "#text-directives" },
     { "include": "#leaf-directives" },
-    { "include": "#figure-directive" }
+    { "include": "#figure-directive" },
+    { "include": "#details-directive" }
   ],
   "repository": {
     "comments": {
@@ -89,6 +90,16 @@
           }
         }
       ]
+    },
+    "details-directive": {
+      "match": "^(\\s*)(:{3,})(details)(\\[)((?:\\\\.|[^\\\\\\]\\r\\n])*)(\\])",
+      "captures": {
+        "2": { "name": "punctuation.definition.directive.scholarmark" },
+        "3": { "name": "support.function.directive.scholarmark" },
+        "4": { "name": "punctuation.definition.arguments.begin.scholarmark" },
+        "5": { "name": "entity.name.label.scholarmark" },
+        "6": { "name": "punctuation.definition.arguments.end.scholarmark" }
+      }
     },
     "figure-directive": {
       "begin": "^(\\s*)(:::)(figure)\\b(?:\\s*)(\\{)",
