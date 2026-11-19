@@ -1,6 +1,6 @@
 {
   "name": "scholarmark",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "A scientific Markdown specification and reference renderer",
   "license": "MIT",
   "author": "Juho Vepsäläinen",
