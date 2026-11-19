@@ -17,6 +17,20 @@ jobs:
           node-version: 20.19.0
           cache: npm
       - run: npm ci
+      - name: Test the package from a clean checkout
+        run: |
+          mkdir "$RUNNER_TEMP/consumer"
+          npm pack --ignore-scripts=false --pack-destination "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          npm install --ignore-scripts --no-audit --no-fund ./scholarmark-*.tgz
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { renderSync } from "scholarmark";
+          const { diagnostics, html } = renderSync(":::details[Method]\nA complete trial.\n:::", "");
+          assert.deepEqual(diagnostics, []);
+          assert.match(html, /<summary\b[^>]*>Method<\/summary>/);
+          assert.match(html, /<p\b[^>]*>A complete trial\.<\/p>\s*<\/details>/);
+          JS
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

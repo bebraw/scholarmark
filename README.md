@@ -157,6 +157,11 @@ npm test
 npm run build
 ```
 
+For a release, run `npm ci` and `npm pack --ignore-scripts=false` from the
+versioned checkout. This runs the project's `prepack` build even if your npm
+configuration normally skips lifecycle scripts. Test the resulting tarball
+and pass that same file to `npm publish`.
+
 ## Render a document
 
 ```ts
